@@ -1,0 +1,20 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#0A1420"/>
+  <rect x="44" y="44" width="1192" height="632" rx="32" fill="url(#paint0_linear)"/>
+  <rect x="316" y="146" width="648" height="430" rx="28" fill="#EFF6FF"/>
+  <rect x="386" y="228" width="132" height="132" rx="26" fill="#F6C15B"/>
+  <path d="M419 291L460 332L560 234" stroke="#08111D" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="566" y="246" width="296" height="24" rx="12" fill="#A6BED7"/>
+  <rect x="566" y="304" width="250" height="24" rx="12" fill="#A6BED7"/>
+  <rect x="386" y="412" width="476" height="24" rx="12" fill="#A6BED7"/>
+  <rect x="386" y="468" width="402" height="24" rx="12" fill="#A6BED7"/>
+  <circle cx="1020" cy="182" r="90" fill="#7FC1FF" fill-opacity="0.18"/>
+  <text x="88" y="134" fill="#EFF6FF" font-family="Segoe UI, Arial, sans-serif" font-size="62" font-weight="700">Test Prep</text>
+  <text x="88" y="208" fill="#C9DAEA" font-family="Segoe UI, Arial, sans-serif" font-size="34">Test-day routines, checks, and confidence cues</text>
+  <defs>
+    <linearGradient id="paint0_linear" x1="88" y1="76" x2="1178" y2="652" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#103250"/>
+      <stop offset="1" stop-color="#0A2034"/>
+    </linearGradient>
+  </defs>
+</svg>

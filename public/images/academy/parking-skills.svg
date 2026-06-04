@@ -1,0 +1,18 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#0B1523"/>
+  <rect x="44" y="44" width="1192" height="632" rx="32" fill="url(#paint0_linear)"/>
+  <rect x="194" y="204" width="182" height="314" rx="28" stroke="#EFF6FF" stroke-width="16" stroke-dasharray="22 16"/>
+  <rect x="460" y="204" width="362" height="314" rx="44" fill="#EFF6FF"/>
+  <rect x="536" y="274" width="206" height="126" rx="24" fill="#B4D7FF"/>
+  <circle cx="548" cy="524" r="44" fill="#122134"/>
+  <circle cx="734" cy="524" r="44" fill="#122134"/>
+  <rect x="904" y="204" width="182" height="314" rx="28" stroke="#EFF6FF" stroke-width="16" stroke-dasharray="22 16"/>
+  <text x="88" y="134" fill="#EFF6FF" font-family="Segoe UI, Arial, sans-serif" font-size="62" font-weight="700">Parking</text>
+  <text x="88" y="208" fill="#C9DAEA" font-family="Segoe UI, Arial, sans-serif" font-size="34">Calm positioning, mirrors, and steering control</text>
+  <defs>
+    <linearGradient id="paint0_linear" x1="86" y1="70" x2="1176" y2="648" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#11375A"/>
+      <stop offset="1" stop-color="#0A2036"/>
+    </linearGradient>
+  </defs>
+</svg>

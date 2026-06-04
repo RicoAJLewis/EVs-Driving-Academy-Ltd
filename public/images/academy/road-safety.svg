@@ -1,0 +1,17 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#09131F"/>
+  <rect x="44" y="44" width="1192" height="632" rx="32" fill="url(#paint0_linear)"/>
+  <path d="M640 174L814 475H466L640 174Z" fill="#F6C15B"/>
+  <rect x="606" y="280" width="68" height="118" rx="24" fill="#08111D"/>
+  <rect x="606" y="424" width="68" height="68" rx="24" fill="#08111D"/>
+  <circle cx="255" cy="206" r="98" fill="#7FC1FF" fill-opacity="0.15"/>
+  <circle cx="1025" cy="534" r="120" fill="#7FC1FF" fill-opacity="0.12"/>
+  <text x="88" y="134" fill="#EFF6FF" font-family="Segoe UI, Arial, sans-serif" font-size="62" font-weight="700">Road Safety</text>
+  <text x="88" y="208" fill="#C9DAEA" font-family="Segoe UI, Arial, sans-serif" font-size="34">Simple habits every learner should practise</text>
+  <defs>
+    <linearGradient id="paint0_linear" x1="120" y1="86" x2="1138" y2="634" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E2A45"/>
+      <stop offset="1" stop-color="#0A1D31"/>
+    </linearGradient>
+  </defs>
+</svg>

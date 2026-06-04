@@ -1,0 +1,277 @@
+I want to create a website for EVs Driving Academy Ltd.
+
+We will begin with the homepage landing page. The landing page should be built as a full-screen animated hero/banner section.
+
+The banner has 3 phases that must run in this exact order:
+
+1. Landing Phase
+2. Transition Phase
+3. Idle Phase
+
+During the Idle Phase, the banner should include cursor-based interactions.
+
+Asset Locations:
+
+Use the following image files as the visual source assets for the banner.
+
+Full reference image:
+"C:\Users\ricoa\Documents\Codex_projects\EVs Driving Academy Ltd\Images\Landing page\full_image.png"
+
+This full image shows the final intended look of the banner. Use it as the visual reference for layout, spacing, layering, scale, and final composition.
+
+Individual asset layers:
+
+Background:
+"C:\Users\ricoa\Documents\Codex_projects\EVs Driving Academy Ltd\Images\Landing page\background.png"
+
+Middle ground 1, without car:
+"C:\Users\ricoa\Documents\Codex_projects\EVs Driving Academy Ltd\Images\Landing page\Middle ground _no car.png"
+
+Middle ground 2, car layer:
+"C:\Users\ricoa\Documents\Codex_projects\EVs Driving Academy Ltd\Images\Landing page\middleground car.png"
+
+Foreground:
+"C:\Users\ricoa\Documents\Codex_projects\EVs Driving Academy Ltd\Images\Landing page\foreground.png"
+
+Important Asset Instructions:
+
+Use the full_image.png only as a reference image.
+
+The actual animated banner should be built using the individual asset layers:
+- background.png
+- Middle ground _no car.png
+- middleground car.png
+- foreground.png
+
+Layer the assets in this order from back to front:
+
+1. background.png
+2. Middle ground _no car.png
+3. middleground car.png
+4. foreground.png
+5. Text content and CTA buttons
+6. Cursor glow / interaction layer
+
+The layered composition should visually match full_image.png as closely as possible once the animation reaches the final idle state.
+
+Banner Structure:
+
+Create a full-width, full-screen hero banner for the homepage.
+
+The banner should include:
+- Main headline
+- Supporting subtitle
+- Primary CTA button
+- Secondary CTA button or WhatsApp link
+- Layered image composition using the supplied image assets
+- Cursor interaction effects during the idle phase only
+
+Suggested copy:
+
+Headline:
+"Learn to Drive with Confidence"
+
+Subtitle:
+"Professional driving lessons designed to help you become road-ready, safe, and confident."
+
+Primary CTA:
+"Book a Lesson"
+
+Secondary CTA:
+"Message Us on WhatsApp"
+
+Animation Phase 1: Landing
+
+Purpose:
+The Landing Phase introduces the page with a polished first impression.
+
+Timing:
+Total duration: 1.5 to 2.5 seconds
+
+Behavior:
+When the page first loads:
+- The background layer should fade in first.
+- The middle ground layer should fade and slide slightly into position.
+- The car layer should appear with a subtle motion, as if settling into the scene.
+- The foreground layer should appear last among the image layers.
+- The headline should fade in and move slightly upward.
+- The subtitle should appear shortly after the headline.
+- CTA buttons should appear last.
+
+Animation style:
+- Smooth fade-in
+- Slight upward movement
+- Subtle parallax-style entrance
+- No harsh movement
+- No overly fast or distracting effects
+
+At the end of this phase:
+- All visual layers should be visible.
+- Text and buttons should be readable.
+- The scene should closely match full_image.png.
+
+Animation Phase 2: Transition
+
+Purpose:
+The Transition Phase moves the banner from the entrance animation into a calm interactive state.
+
+Timing:
+Total duration: 0.8 to 1.5 seconds
+
+Behavior:
+After the Landing Phase completes:
+- The layered image assets should settle into their final positions.
+- The car layer may make a very subtle final movement into place.
+- The foreground should stabilize.
+- Text and CTA buttons should become fully interactive.
+- The cursor interaction system should initialize but should not yet feel aggressive or distracting.
+
+At the end of this phase:
+- Set the banner state to idle.
+- Enable cursor interactions.
+
+Animation Phase 3: Idle
+
+Purpose:
+The Idle Phase keeps the banner visually alive while allowing subtle cursor interaction.
+
+Timing:
+Starts immediately after the Transition Phase and continues while the user remains on the page.
+
+Idle behavior:
+- The background may have very subtle movement.
+- The middle ground can move slightly slower than the foreground to create depth.
+- The car layer should respond subtly to cursor movement.
+- The foreground can have a very light parallax shift.
+- Text should remain stable and readable.
+- CTA buttons should have hover effects.
+
+Cursor Interaction Requirements:
+
+Cursor interactions must only be active during the Idle Phase.
+
+During Idle Phase:
+- Track the cursor position inside the banner.
+- Add a soft glow or radial light that follows the cursor.
+- Apply subtle parallax movement to image layers.
+- Background should move the least.
+- Middle ground should move slightly more.
+- Car layer can have a gentle movement response.
+- Foreground should move subtly to create depth.
+- Text should move very slightly or remain fixed for readability.
+- CTA buttons should react on hover with a small scale, shadow, or glow effect.
+
+Cursor behavior should feel:
+- Smooth
+- Premium
+- Lightweight
+- Not game-like
+- Not distracting
+
+Disable or simplify cursor interaction on mobile and touch devices.
+
+Technical Requirements:
+
+Use:
+- React / Next.js
+- Tailwind CSS
+- Framer Motion
+
+Create a clean component structure.
+
+Suggested structure:
+
+HomePage
+- HeroBanner
+  - HeroImageLayers
+  - HeroContent
+  - CTAButtons
+  - CursorGlow
+  - useBannerPhase
+  - useCursorParallax
+
+State logic:
+
+Use a phase-based animation system.
+
+Example:
+
+Initial phase:
+"landing"
+
+After Landing Phase completes:
+set phase to "transition"
+
+After Transition Phase completes:
+set phase to "idle"
+
+Cursor interaction should only run when:
+phase === "idle"
+
+Reduced Motion Requirement:
+
+Respect the user's reduced-motion preference.
+
+If reduced motion is enabled:
+- Disable parallax
+- Disable cursor glow movement
+- Replace large movement animations with simple fades
+- Keep the page fully usable and visually clean
+
+Responsive Requirements:
+
+The banner must work on:
+- Desktop
+- Laptop
+- Tablet
+- Mobile
+
+On desktop:
+- Use the full layered animation and cursor interactions.
+
+On tablet:
+- Keep layered composition but reduce movement intensity.
+
+On mobile:
+- Disable cursor tracking.
+- Use simplified fade animations.
+- Ensure text and CTA buttons remain readable.
+- Prevent image layers from overflowing awkwardly.
+
+Accessibility Requirements:
+
+- Use semantic HTML.
+- CTA buttons must be keyboard-focusable.
+- Add proper alt text or mark decorative images as aria-hidden.
+- Maintain strong contrast between text and background.
+- Do not rely only on animation to communicate important information.
+
+Design Direction:
+
+The banner should feel:
+- Professional
+- Modern
+- Confident
+- Energetic
+- Beginner-friendly
+- Suitable for a driving academy
+
+Important:
+
+Do not redesign the assets.
+Do not replace the supplied images.
+Do not change the intended visual composition.
+Use full_image.png as the final visual target.
+Use the individual layers to recreate and animate that target.
+
+Deliverable:
+
+Build the HeroBanner component and connect it to the homepage.
+
+The final result should:
+- Load into the Landing Phase
+- Automatically move into the Transition Phase
+- Automatically enter the Idle Phase
+- Enable cursor interactions only during Idle Phase
+- Match the supplied full_image.png composition as closely as possible
+- Be responsive, accessible, and production-ready

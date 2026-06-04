@@ -1,0 +1,18 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#0B1626"/>
+  <rect x="44" y="44" width="1192" height="632" rx="32" fill="url(#paint0_linear)"/>
+  <circle cx="1014" cy="170" r="84" fill="#F6C15B" fill-opacity="0.28"/>
+  <circle cx="934" cy="552" r="124" fill="#7FC1FF" fill-opacity="0.16"/>
+  <path d="M275 473C275 422.19 316.19 381 367 381H734C784.81 381 826 422.19 826 473V492H275V473Z" fill="#EAF1F8"/>
+  <path d="M354 380L450 282C469.129 262.472 495.332 251.431 522.669 251.431H632.93C658.882 251.431 683.905 260.923 703.304 278.121L805 368.301V421H354V380Z" fill="#F8FBFF"/>
+  <circle cx="390" cy="505" r="54" fill="#122134"/>
+  <circle cx="712" cy="505" r="54" fill="#122134"/>
+  <text x="88" y="134" fill="#EFF6FF" font-family="Segoe UI, Arial, sans-serif" font-size="62" font-weight="700">Beginner</text>
+  <text x="88" y="208" fill="#C9DAEA" font-family="Segoe UI, Arial, sans-serif" font-size="34">First lesson confidence and car basics</text>
+  <defs>
+    <linearGradient id="paint0_linear" x1="78" y1="74" x2="1160" y2="658" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#113659"/>
+      <stop offset="1" stop-color="#0A2441"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.next_corrupt_backup_*/
+.codex-runtime/
+.agents/
+*.tsbuildinfo
+
+# local environment / OS
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
