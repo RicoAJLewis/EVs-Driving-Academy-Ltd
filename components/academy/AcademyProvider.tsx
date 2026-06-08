@@ -8,10 +8,10 @@ import {
   useState,
   type ReactNode
 } from "react";
+import type { User } from "@supabase/supabase-js";
 import {
   academyStorageKeys,
-  demoAcademyUsers,
-  toPublicUser
+  demoAcademyUsers
 } from "@/lib/academy-auth";
 import {
   createAcademyId,
@@ -29,6 +29,7 @@ import {
   readAcademyMediaData,
   saveAcademyMediaData
 } from "@/lib/academy-media-storage";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 import type {
   AcademyAnalytics,
   AcademyComment,
@@ -58,9 +59,14 @@ type AcademyContextValue = {
   visibleVideos: AcademyVideo[];
   featuredVideo: AcademyVideo | null;
   analytics: AcademyAnalytics;
-  login: (email: string, password: string) => LoginResult;
-  registerVisitor: (name: string, email: string, password: string) => RegisterResult;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  registerVisitor: (
+    name: string,
+    email: string,
+    password: string
+  ) => Promise<RegisterResult>;
+  requestPasswordReset: (email: string, redirectTo: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
   createSection: (title: string, description: string) => void;
   updateSection: (
     sectionId: string,
@@ -154,6 +160,32 @@ function parseStoredValue<T>(value: string | null, fallback: T) {
   }
 }
 
+function getDisplayNameFromUser(user: User) {
+  const metadataName =
+    typeof user.user_metadata?.name === "string"
+      ? user.user_metadata.name
+      : typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : "";
+
+  return (
+    metadataName.trim() ||
+    user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
+    "EV Academy Visitor"
+  );
+}
+
+function toAcademyUserFromSupabase(user: User): AcademyUser {
+  const role = user.user_metadata?.role === "admin" ? "admin" : "visitor";
+
+  return {
+    id: user.id,
+    name: getDisplayNameFromUser(user),
+    email: user.email ?? "",
+    role
+  };
+}
+
 function normalizeStoredVideos(videos: AcademyVideo[]) {
   return Promise.all(
     videos.map(async (video) => {
@@ -217,6 +249,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let isMounted = true;
+    const supabase = getSupabaseClient();
 
     const loadAcademyState = async () => {
       const storedUsers = parseStoredValue<StoredAcademyUser[]>(
@@ -230,12 +263,12 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       }>(window.localStorage.getItem(academyStorageKeys.data), {
         sections: defaultAcademySections,
         videos: defaultAcademyVideos,
-        comments: defaultAcademyComments
-      });
-      const storedSessionUserId = window.localStorage.getItem(
-        academyStorageKeys.sessionUserId
-      );
+          comments: defaultAcademyComments
+        });
       const hydratedVideos = await normalizeStoredVideos(storedData.videos);
+      const sessionResult = supabase
+        ? await supabase.auth.getSession()
+        : { data: { session: null } };
 
       if (!isMounted) {
         return;
@@ -245,21 +278,28 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       setSections(storedData.sections);
       setVideos(hydratedVideos);
       setComments(storedData.comments);
-
-      if (storedSessionUserId) {
-        const sessionUser = storedUsers.find(
-          (user) => user.id === storedSessionUserId
-        );
-        setCurrentUser(sessionUser ? toPublicUser(sessionUser) : null);
-      }
+      setCurrentUser(
+        sessionResult.data.session?.user
+          ? toAcademyUserFromSupabase(sessionResult.data.session.user)
+          : null
+      );
 
       setIsReady(true);
     };
 
     void loadAcademyState();
 
+    const authSubscription = supabase?.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      setCurrentUser(session?.user ? toAcademyUserFromSupabase(session.user) : null);
+    });
+
     return () => {
       isMounted = false;
+      authSubscription?.data.subscription.unsubscribe();
     };
   }, []);
 
@@ -285,18 +325,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       })
     );
   }, [comments, isReady, sections, videos]);
-
-  useEffect(() => {
-    if (!isReady) {
-      return;
-    }
-
-    if (currentUser) {
-      window.localStorage.setItem(academyStorageKeys.sessionUserId, currentUser.id);
-    } else {
-      window.localStorage.removeItem(academyStorageKeys.sessionUserId);
-    }
-  }, [currentUser, isReady]);
 
   const computedVideos = useMemo(() => {
     return toSortedVideos(
@@ -363,22 +391,31 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     };
   }, [comments, computedVideos, sortedSections]);
 
-  const login = (email: string, password: string): LoginResult => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const matchedUser = users.find(
-      (user) =>
-        user.email.trim().toLowerCase() === normalizedEmail &&
-        user.password === password
-    );
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    const supabase = getSupabaseClient();
 
-    if (!matchedUser) {
+    if (!supabase) {
       return {
         success: false,
-        error: "Invalid email or password."
+        error:
+          "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
       };
     }
 
-    const publicUser = toPublicUser(matchedUser);
+    const normalizedEmail = email.trim().toLowerCase();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password
+    });
+
+    if (error || !data.user) {
+      return {
+        success: false,
+        error: error?.message ?? "Invalid email or password."
+      };
+    }
+
+    const publicUser = toAcademyUserFromSupabase(data.user);
     setCurrentUser(publicUser);
 
     return { success: true, user: publicUser };
@@ -388,35 +425,84 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     name: string,
     email: string,
     password: string
-  ): RegisterResult => {
+  ): Promise<RegisterResult> => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return Promise.resolve({
+        success: false,
+        error:
+          "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      });
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (users.some((user) => user.email.trim().toLowerCase() === normalizedEmail)) {
+    return supabase.auth
+      .signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            name: name.trim() || "EV Academy Visitor",
+            role: "visitor"
+          }
+        }
+      })
+      .then(({ data, error }) => {
+        if (error || !data.user) {
+          return {
+            success: false,
+            error: error?.message ?? "Unable to create account."
+          };
+        }
+
+        const publicUser = toAcademyUserFromSupabase(data.user);
+        setCurrentUser(publicUser);
+
+        return {
+          success: true,
+          user: publicUser
+        };
+      });
+  };
+
+  const requestPasswordReset = async (
+    email: string,
+    redirectTo: string
+  ): Promise<LoginResult> => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
       return {
         success: false,
-        error: "An account with that email already exists."
+        error:
+          "Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
       };
     }
 
-    const newUser: StoredAcademyUser = {
-      id: createAcademyId("user"),
-      name: name.trim() || "EV Academy Visitor",
-      email: normalizedEmail,
-      password,
-      role: "visitor"
-    };
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo }
+    );
 
-    setUsers((prevUsers) => [...prevUsers, newUser]);
-    const publicUser = toPublicUser(newUser);
-    setCurrentUser(publicUser);
+    if (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
 
-    return {
-      success: true,
-      user: publicUser
-    };
+    return { success: true };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const supabase = getSupabaseClient();
+
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
     setCurrentUser(null);
   };
 
@@ -770,6 +856,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       analytics,
       login,
       registerVisitor,
+      requestPasswordReset,
       logout,
       createSection,
       updateSection,

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { getAcademyRedirectForRole } from "@/lib/academy-auth";
@@ -9,12 +8,16 @@ import { AcademyPageLayout } from "./AcademyPageLayout";
 
 export function AcademyLogin() {
   const router = useRouter();
-  const { currentUser, isReady, login, registerVisitor } = useAcademy();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const { currentUser, isReady, login, registerVisitor, requestPasswordReset } =
+    useAcademy();
+  const [mode, setMode] = useState<"login" | "register" | "reset">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isReady && currentUser) {
@@ -22,21 +25,59 @@ export function AcademyLogin() {
     }
   }, [currentUser, isReady, router]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage("");
+    setSuccessMessage("");
 
+    if (!email.trim()) {
+      setErrorMessage("Please enter your email address.");
+      return;
+    }
+
+    if (mode === "register") {
+      if (!name.trim()) {
+        setErrorMessage("Please enter your full name.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setErrorMessage("Passwords do not match.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
     const result =
-      mode === "login"
-        ? login(email, password)
-        : registerVisitor(name, email, password);
+      mode === "reset"
+        ? await requestPasswordReset(
+            email,
+            `${window.location.origin}/academy/login`
+          )
+        : mode === "login"
+          ? await login(email, password)
+          : await registerVisitor(name, email, password);
+    setIsSubmitting(false);
 
-    if (!result.success || !result.user) {
+    if (!result.success) {
       setErrorMessage(result.error ?? "Unable to continue.");
       return;
     }
 
-    router.replace(getAcademyRedirectForRole(result.user.role));
+    if (mode === "reset") {
+      setSuccessMessage("Password reset email sent. Please check your inbox.");
+      return;
+    }
+
+    if (mode === "register") {
+      setSuccessMessage(
+        "Account created. If email confirmation is enabled, please check your inbox."
+      );
+    }
+
+    if (result.user) {
+      router.replace(getAcademyRedirectForRole(result.user.role));
+    }
   };
 
   return (
@@ -58,12 +99,18 @@ export function AcademyLogin() {
       >
         <div style={{ display: "grid", gap: "0.45rem", marginBottom: "1.4rem" }}>
           <strong style={{ color: "#eff6ff", fontSize: "1.05rem" }}>
-            {mode === "login" ? "Welcome back" : "Create a visitor account"}
+            {mode === "login"
+              ? "Welcome back"
+              : mode === "reset"
+                ? "Reset your password"
+                : "Create a visitor account"}
           </strong>
           <span style={{ color: "rgba(239,246,255,0.72)", lineHeight: 1.7 }}>
             {mode === "login"
               ? "Sign in to manage your learning space, continue watching tutorials, and stay connected with EV Academy."
-              : "Create your visitor account to save your place, join the Academy, and take part in the learning experience."}
+              : mode === "reset"
+                ? "Enter your email address and we will send a secure password reset link."
+                : "Create your visitor account to save your place, join the Academy, and take part in the learning experience."}
           </span>
         </div>
 
@@ -105,23 +152,45 @@ export function AcademyLogin() {
             />
           </label>
 
-          <label style={{ display: "grid", gap: "0.45rem", color: "#eff6ff" }}>
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              style={{
-                minHeight: "3rem",
-                borderRadius: "0.9rem",
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: "rgba(8,17,29,0.45)",
-                color: "#eff6ff",
-                padding: "0.85rem 1rem"
-              }}
-            />
-          </label>
+          {mode !== "reset" ? (
+            <label style={{ display: "grid", gap: "0.45rem", color: "#eff6ff" }}>
+              <span>Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                style={{
+                  minHeight: "3rem",
+                  borderRadius: "0.9rem",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(8,17,29,0.45)",
+                  color: "#eff6ff",
+                  padding: "0.85rem 1rem"
+                }}
+              />
+            </label>
+          ) : null}
+
+          {mode === "register" ? (
+            <label style={{ display: "grid", gap: "0.45rem", color: "#eff6ff" }}>
+              <span>Confirm password</span>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+                style={{
+                  minHeight: "3rem",
+                  borderRadius: "0.9rem",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(8,17,29,0.45)",
+                  color: "#eff6ff",
+                  padding: "0.85rem 1rem"
+                }}
+              />
+            </label>
+          ) : null}
 
           {errorMessage ? (
             <p
@@ -135,8 +204,21 @@ export function AcademyLogin() {
             </p>
           ) : null}
 
+          {successMessage ? (
+            <p
+              style={{
+                margin: 0,
+                color: "#bbf7d0",
+                lineHeight: 1.6
+              }}
+            >
+              {successMessage}
+            </p>
+          ) : null}
+
           <button
             type="submit"
+            disabled={isSubmitting}
             style={{
               minHeight: "3.2rem",
               borderRadius: "999px",
@@ -145,10 +227,17 @@ export function AcademyLogin() {
                 "linear-gradient(135deg, rgba(246,193,91,1), rgba(240,171,36,1))",
               color: "#0f172a",
               fontWeight: 700,
-              cursor: "pointer"
+              cursor: isSubmitting ? "wait" : "pointer",
+              opacity: isSubmitting ? 0.72 : 1
             }}
           >
-            {mode === "login" ? "Login" : "Create Visitor Account"}
+            {isSubmitting
+              ? "Please wait..."
+              : mode === "login"
+                ? "Login"
+                : mode === "reset"
+                  ? "Send Reset Email"
+                  : "Create Visitor Account"}
           </button>
         </form>
 
@@ -165,9 +254,11 @@ export function AcademyLogin() {
           <button
             type="button"
             onClick={() =>
-              setMode((currentMode) =>
-                currentMode === "login" ? "register" : "login"
-              )
+              setMode((currentMode) => {
+                setErrorMessage("");
+                setSuccessMessage("");
+                return currentMode === "register" ? "login" : "register";
+              })
             }
             style={{
               border: 0,
@@ -178,32 +269,30 @@ export function AcademyLogin() {
               fontWeight: 700
             }}
           >
-            {mode === "login" ? "Create visitor account" : "Back to login"}
+            {mode === "register" ? "Back to login" : "Create visitor account"}
           </button>
 
-          <Link
-            href="/academy/login"
-            onClick={(event) => event.preventDefault()}
+          <button
+            type="button"
+            onClick={() => {
+              setMode((currentMode) => (currentMode === "reset" ? "login" : "reset"));
+              setErrorMessage("");
+              setSuccessMessage("");
+            }}
             style={{
+              border: 0,
+              background: "none",
               color: "rgba(239,246,255,0.72)",
               textDecoration: "underline",
-              textUnderlineOffset: "0.24rem"
+              textUnderlineOffset: "0.24rem",
+              padding: 0,
+              cursor: "pointer",
+              font: "inherit"
             }}
           >
-            Forgot password?
-          </Link>
+            {mode === "reset" ? "Back to login" : "Forgot password?"}
+          </button>
         </div>
-
-        <p
-          style={{
-            margin: "1rem 0 0",
-            color: "rgba(239,246,255,0.62)",
-            lineHeight: 1.7
-          }}
-        >
-          Password reset is a placeholder right now. This mock login flow is
-          structured so a real auth provider can be connected later.
-        </p>
       </div>
     </AcademyPageLayout>
   );

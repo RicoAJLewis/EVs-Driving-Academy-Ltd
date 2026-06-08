@@ -41,8 +41,16 @@ export function HeroBanner({ locationUrl }: HeroBannerProps) {
       aria-label="EVs Driving Academy introduction"
       {...handlers}
     >
-      <HeroMenu reducedMotion={reducedMotion} />
-      <HeroLocationLink href={locationUrl} reducedMotion={reducedMotion} />
+      <HeroMenu
+        reducedMotion={reducedMotion}
+        rightContent={
+          <HeroLocationLink
+            href={locationUrl}
+            reducedMotion={reducedMotion}
+            inline
+          />
+        }
+      />
       <HeroImageLayers
         phase={phase}
         reducedMotion={reducedMotion}

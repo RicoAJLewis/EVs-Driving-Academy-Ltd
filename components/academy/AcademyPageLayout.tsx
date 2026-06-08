@@ -75,18 +75,7 @@ export function AcademyPageLayout({
             "linear-gradient(145deg, rgba(6,12,22,0.98) 0%, rgba(10,28,48,0.92) 58%, rgba(13,74,126,0.35) 100%)"
         }}
       >
-        <HeroMenu reducedMotion={reducedMotion} />
-        <div
-          className="academy-top-right"
-          style={{
-            position: "absolute",
-            top: "1rem",
-            right: "1rem",
-            zIndex: 45
-          }}
-        >
-          {topRightControl}
-        </div>
+        <HeroMenu reducedMotion={reducedMotion} rightContent={topRightControl} />
         <div
           className="academy-hero-inner"
           style={{
@@ -181,12 +170,12 @@ const topRightButtonStyle = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  minHeight: "2.85rem",
-  padding: "0.75rem 1rem",
-  borderRadius: "999px",
-  border: "1px solid rgba(255,255,255,0.14)",
-  background: "rgba(8,17,29,0.44)",
-  color: "#eff6ff",
+  minHeight: "2.55rem",
+  padding: "0.55rem 0.8rem",
+  borderRadius: "0.85rem",
+  border: "1px solid rgba(8,17,29,0.1)",
+  background: "rgba(255,255,255,0.68)",
+  color: "#08111d",
   textDecoration: "none",
   fontWeight: 700,
   backdropFilter: "blur(12px)"

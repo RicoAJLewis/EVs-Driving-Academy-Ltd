@@ -1,95 +1,161 @@
 "use client";
 
+import Link from "next/link";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Quote, Star } from "lucide-react";
+import {
+  type ReviewSource,
+  type SiteReview
+} from "@/lib/reviews-data";
+import { getSupabaseClient } from "@/lib/supabaseClient";
+import type { AcademyUser } from "@/types/academy";
 
-type Review = {
-  id: string;
-  quote: string;
-  source: string;
-};
+type ReviewFilter = "All Reviews" | ReviewSource;
 
 type ReviewsSectionProps = {
-  reviews: Review[];
+  setmoreReviews: SiteReview[];
 };
+
+const filterOptions: ReviewFilter[] = [
+  "All Reviews",
+  "EVs Driving Academy Ltd",
+  "Setmore"
+];
 
 const containerVariants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.12
+      staggerChildren: 0.1
     }
   }
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 24 },
+  hidden: { opacity: 0, y: 22 },
   visible: {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 0.55,
+      duration: 0.5,
       ease: [0.22, 1, 0.36, 1] as const
     }
   }
 };
 
-function sanitizeReviewQuote(quote: string) {
-  return quote
-    .replaceAll("ðŸ’ª", "\u{1F4AA}")
-    .replace(/\s+/g, " ")
-    .replace("1ST", "1st")
-    .trim();
+type SupabaseReviewRow = {
+  id: string;
+  reviewer_name: string | null;
+  rating: number | null;
+  comment: string | null;
+  source: string | null;
+  created_at: string | null;
+};
+
+function getDisplayNameFromSessionUser(user: {
+  email?: string;
+  user_metadata?: Record<string, unknown>;
+}) {
+  const metadataName =
+    typeof user.user_metadata?.name === "string"
+      ? user.user_metadata.name
+      : typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : "";
+
+  return (
+    metadataName.trim() ||
+    user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
+    "EV Academy Visitor"
+  );
 }
 
-function ReviewStars() {
+function toSiteReview(row: SupabaseReviewRow): SiteReview {
+  return {
+    id: row.id,
+    name: row.reviewer_name?.trim() || "EV Academy Student",
+    rating: Math.min(Math.max(row.rating ?? 5, 1), 5),
+    comment: row.comment?.trim() || "",
+    source: "EVs Driving Academy Ltd",
+    date: row.created_at
+      ? new Date(row.created_at).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        })
+      : undefined
+  };
+}
+
+function Stars({
+  rating,
+  interactive = false,
+  onChange
+}: {
+  rating: number;
+  interactive?: boolean;
+  onChange?: (rating: number) => void;
+}) {
   return (
     <div
-      aria-hidden="true"
-      style={{
-        display: "flex",
-        gap: "0.28rem",
-        color: "#f6c15b"
-      }}
+      aria-label={interactive ? "Select star rating" : `${rating} out of 5 stars`}
+      role={interactive ? "radiogroup" : undefined}
+      style={{ display: "flex", gap: "0.3rem", color: "#f6c15b" }}
     >
-      {Array.from({ length: 5 }).map((_, index) => (
-        <Star key={index} size={14} fill="currentColor" strokeWidth={1.8} />
-      ))}
+      {Array.from({ length: 5 }).map((_, index) => {
+        const starValue = index + 1;
+        const filled = starValue <= rating;
+
+        if (interactive) {
+          return (
+            <button
+              key={starValue}
+              type="button"
+              role="radio"
+              aria-checked={starValue === rating}
+              aria-label={`${starValue} star${starValue === 1 ? "" : "s"}`}
+              onClick={() => onChange?.(starValue)}
+              className="review-star-button"
+            >
+              <Star
+                size={22}
+                fill={filled ? "currentColor" : "transparent"}
+                strokeWidth={1.9}
+              />
+            </button>
+          );
+        }
+
+        return (
+          <Star
+            key={starValue}
+            aria-hidden="true"
+            size={15}
+            fill={filled ? "currentColor" : "transparent"}
+            strokeWidth={1.8}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function ReviewCard({
-  review,
-  emphasis,
-  reducedMotion
-}: {
-  review: Review;
-  emphasis: "featured" | "supporting";
-  reducedMotion: boolean;
-}) {
-  const featured = emphasis === "featured";
-  const learnerLabel = featured ? "First-Time Learner" : "Learner Driver";
-  const initials = featured ? "FL" : "LD";
-
+function ReviewCard({ review }: { review: SiteReview }) {
   return (
     <motion.article
-      variants={reducedMotion ? undefined : itemVariants}
-      className={`review-card ${featured ? "review-card-featured" : "review-card-supporting"}`}
+      variants={itemVariants}
+      className="review-card"
       style={{
         position: "relative",
         display: "grid",
-        gap: featured ? "1.35rem" : "1rem",
-        minHeight: featured ? "100%" : undefined,
-        borderRadius: featured ? "1.9rem" : "1.55rem",
-        border: "1px solid rgba(255,255,255,0.1)",
-        background: featured
-          ? "linear-gradient(180deg, rgba(18,34,52,0.96) 0%, rgba(10,20,32,0.98) 100%)"
-          : "linear-gradient(180deg, rgba(17,29,45,0.92) 0%, rgba(10,19,30,0.96) 100%)",
-        padding: featured ? "1.9rem" : "1.4rem",
-        boxShadow: featured
-          ? "0 28px 70px rgba(5,12,20,0.28)"
-          : "0 20px 56px rgba(5,12,20,0.18)",
+        gap: "1rem",
+        borderRadius: "1.1rem",
+        border: "1px solid rgba(255,255,255,0.12)",
+        background:
+          "linear-gradient(180deg, rgba(18,34,52,0.94) 0%, rgba(10,20,32,0.98) 100%)",
+        padding: "1.35rem",
+        boxShadow: "0 22px 58px rgba(5,12,20,0.2)",
         overflow: "hidden"
       }}
     >
@@ -99,10 +165,11 @@ function ReviewCard({
           position: "absolute",
           inset: "0 auto auto 0",
           width: "100%",
-          height: featured ? "4px" : "3px",
-          background: featured
-            ? "linear-gradient(90deg, rgba(246,193,91,0.92), rgba(127,193,255,0.35))"
-            : "linear-gradient(90deg, rgba(127,193,255,0.55), rgba(246,193,91,0.3))"
+          height: "3px",
+          background:
+            review.source === "Setmore"
+              ? "linear-gradient(90deg, rgba(246,193,91,0.9), rgba(127,193,255,0.25))"
+              : "linear-gradient(90deg, rgba(127,193,255,0.7), rgba(246,193,91,0.32))"
         }}
       />
 
@@ -114,88 +181,39 @@ function ReviewCard({
           gap: "0.85rem"
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: featured ? "3rem" : "2.6rem",
-            height: featured ? "3rem" : "2.6rem",
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#f6c15b"
-          }}
-        >
-          <Quote size={featured ? 18 : 16} strokeWidth={2.1} />
-        </span>
-
-        <ReviewStars />
+        <Quote aria-hidden="true" size={19} color="#f6c15b" strokeWidth={2.1} />
+        <Stars rating={review.rating} />
       </div>
 
       <p
         style={{
           margin: 0,
-          maxWidth: featured ? "34rem" : "none",
           color: "#f8fbff",
-          fontSize: featured ? "1.08rem" : "0.98rem",
-          lineHeight: featured ? 1.95 : 1.82
+          fontSize: "0.98rem",
+          lineHeight: 1.8
         }}
       >
-        "{sanitizeReviewQuote(review.quote)}"
+        "{review.comment}"
       </p>
 
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-end",
           justifyContent: "space-between",
-          gap: "0.85rem",
-          marginTop: "0.15rem"
+          gap: "1rem",
+          marginTop: "0.2rem"
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "0.78rem" }}>
-          <span
-            aria-hidden="true"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: featured ? "2.9rem" : "2.55rem",
-              height: featured ? "2.9rem" : "2.55rem",
-              borderRadius: "999px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              background:
-                "linear-gradient(135deg, rgba(127,193,255,0.18), rgba(255,255,255,0.05))",
-              color: "#eff6ff",
-              fontWeight: 700,
-              fontSize: "0.84rem",
-              letterSpacing: "0.05em"
-            }}
-          >
-            {initials}
-          </span>
-
-          <div style={{ display: "grid", gap: "0.18rem" }}>
-            <span
-              style={{
-                color: "#eff6ff",
-                fontWeight: 700,
-                fontSize: featured ? "0.96rem" : "0.92rem"
-              }}
-            >
-              {learnerLabel}
+        <div style={{ display: "grid", gap: "0.2rem" }}>
+          <strong style={{ color: "#eff6ff", fontSize: "0.98rem" }}>
+            {review.name}
+          </strong>
+          {review.date ? (
+            <span style={{ color: "rgba(239,246,255,0.58)", fontSize: "0.82rem" }}>
+              {review.date}
             </span>
-            <span
-              style={{
-                color: "rgba(239,246,255,0.64)",
-                fontSize: "0.84rem"
-              }}
-            >
-              Student review
-            </span>
-          </div>
+          ) : null}
         </div>
 
         <span
@@ -207,24 +225,166 @@ function ReviewCard({
             border: "1px solid rgba(246,193,91,0.24)",
             background: "rgba(246,193,91,0.12)",
             color: "#ffe7ae",
-            padding: "0.38rem 0.72rem",
-            fontSize: "0.76rem",
-            fontWeight: 700,
-            letterSpacing: "0.08em",
+            padding: "0.36rem 0.62rem",
+            fontSize: "0.72rem",
+            fontWeight: 800,
+            letterSpacing: "0.06em",
             textTransform: "uppercase",
             whiteSpace: "nowrap"
           }}
         >
-          {review.source}
+          Source: {review.source}
         </span>
       </div>
     </motion.article>
   );
 }
 
-export function ReviewsSection({ reviews }: ReviewsSectionProps) {
+export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
   const reducedMotion = useReducedMotion() ?? false;
-  const [featuredReview, ...supportingReviews] = reviews;
+  const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
+  const [websiteReviews, setWebsiteReviews] = useState<SiteReview[]>([]);
+  const [activeFilter, setActiveFilter] = useState<ReviewFilter>("All Reviews");
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setIsSupabaseConfigured(false);
+      return;
+    }
+
+    const loadReviewsAndSession = async () => {
+      const [{ data: sessionData }, { data: reviewRows, error: reviewError }] =
+        await Promise.all([
+          supabase.auth.getSession(),
+          supabase
+            .from("reviews")
+            .select("id, reviewer_name, rating, comment, source, created_at")
+            .order("created_at", { ascending: false })
+        ]);
+
+      if (!isMounted) {
+        return;
+      }
+
+      const sessionUser = sessionData.session?.user;
+
+      setCurrentUser(
+        sessionUser
+          ? {
+              id: sessionUser.id,
+              name: getDisplayNameFromSessionUser(sessionUser),
+              email: sessionUser.email ?? "",
+              role: sessionUser.user_metadata?.role === "admin" ? "admin" : "visitor"
+            }
+          : null
+      );
+
+      if (reviewError) {
+        setStatusMessage(`Unable to load website reviews: ${reviewError.message}`);
+      } else {
+        setWebsiteReviews((reviewRows ?? []).map(toSiteReview));
+      }
+    };
+
+    void loadReviewsAndSession();
+
+    const authSubscription = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      const sessionUser = session?.user;
+
+      setCurrentUser(
+        sessionUser
+          ? {
+              id: sessionUser.id,
+              name: getDisplayNameFromSessionUser(sessionUser),
+              email: sessionUser.email ?? "",
+              role: sessionUser.user_metadata?.role === "admin" ? "admin" : "visitor"
+            }
+          : null
+      );
+    });
+
+    return () => {
+      isMounted = false;
+      authSubscription.data.subscription.unsubscribe();
+    };
+  }, []);
+
+  const allReviews = useMemo(
+    () => [...websiteReviews, ...setmoreReviews],
+    [setmoreReviews, websiteReviews]
+  );
+
+  const filteredReviews = useMemo(() => {
+    if (activeFilter === "All Reviews") {
+      return allReviews;
+    }
+
+    return allReviews.filter((review) => review.source === activeFilter);
+  }, [activeFilter, allReviews]);
+
+  const averageRating =
+    allReviews.length > 0
+      ? allReviews.reduce((sum, review) => sum + review.rating, 0) / allReviews.length
+      : 0;
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatusMessage("");
+
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setStatusMessage("Supabase is not configured yet.");
+      return;
+    }
+
+    if (!currentUser) {
+      setStatusMessage("Please log in before submitting a review.");
+      return;
+    }
+
+    if (!comment.trim()) {
+      setStatusMessage("Please write a short review before submitting.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { data, error } = await supabase
+      .from("reviews")
+      .insert({
+        user_id: currentUser.id,
+        reviewer_name: currentUser.name,
+        rating,
+        comment: comment.trim(),
+        source: "EVs Driving Academy Ltd"
+      })
+      .select("id, reviewer_name, rating, comment, source, created_at")
+      .single();
+    setIsSubmitting(false);
+
+    if (error || !data) {
+      setStatusMessage(error?.message ?? "Unable to submit your review.");
+      return;
+    }
+
+    setWebsiteReviews((reviews) => [toSiteReview(data), ...reviews]);
+    setComment("");
+    setRating(5);
+    setActiveFilter("All Reviews");
+    setStatusMessage("Thank you. Your review has been added.");
+  };
 
   return (
     <section
@@ -233,7 +393,7 @@ export function ReviewsSection({ reviews }: ReviewsSectionProps) {
       style={{
         position: "relative",
         overflow: "hidden",
-        scrollMarginTop: "4.5rem",
+        scrollMarginTop: "5.5rem",
         background:
           "linear-gradient(180deg, rgba(8,17,29,1) 0%, rgba(10,22,36,0.98) 100%)"
       }}
@@ -267,10 +427,10 @@ export function ReviewsSection({ reviews }: ReviewsSectionProps) {
           variants={reducedMotion ? undefined : itemVariants}
           className="reviews-header"
           style={{
-            maxWidth: "41rem",
+            maxWidth: "45rem",
             display: "grid",
             gap: "0.9rem",
-            marginBottom: "2.3rem"
+            marginBottom: "2rem"
           }}
         >
           <p
@@ -290,11 +450,9 @@ export function ReviewsSection({ reviews }: ReviewsSectionProps) {
             id="reviews-heading"
             style={{
               margin: 0,
-              maxWidth: "12ch",
               color: "#eff6ff",
               fontSize: "clamp(2.35rem, 4.5vw, 3.95rem)",
-              lineHeight: 0.95,
-              letterSpacing: "-0.03em",
+              lineHeight: 0.98,
               textWrap: "balance"
             }}
           >
@@ -304,38 +462,154 @@ export function ReviewsSection({ reviews }: ReviewsSectionProps) {
           <p
             style={{
               margin: 0,
-              maxWidth: "40rem",
+              maxWidth: "42rem",
               color: "rgba(239,246,255,0.76)",
               fontSize: "1.03rem",
               lineHeight: 1.82
             }}
           >
-            Hear from students who trained with EVs Driving Academy and built
-            confidence behind the wheel through calm, patient instruction.
+            Read public Setmore feedback and reviews submitted by EVs Driving
+            Academy students through the website.
           </p>
         </motion.div>
 
-        <div className="reviews-layout">
-          {featuredReview ? (
-            <ReviewCard
-              review={featuredReview}
-              emphasis="featured"
-              reducedMotion={reducedMotion}
-            />
-          ) : null}
+        <motion.div
+          variants={reducedMotion ? undefined : itemVariants}
+          className="reviews-summary-row"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "1rem",
+            marginBottom: "1.4rem"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+            <Stars rating={Math.round(averageRating)} />
+            <span style={{ color: "rgba(239,246,255,0.76)", fontWeight: 700 }}>
+              {averageRating.toFixed(1)} average from {allReviews.length} reviews
+            </span>
+          </div>
+
+          <div className="reviews-filter-group" aria-label="Filter reviews by source">
+            {filterOptions.map((option) => {
+              const active = activeFilter === option;
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setActiveFilter(option)}
+                  className="reviews-filter-button"
+                  aria-pressed={active}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        <div className="reviews-content-grid">
+          <motion.div
+            variants={reducedMotion ? undefined : itemVariants}
+            className="reviews-form-panel"
+          >
+            <h3 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+              Share your experience
+            </h3>
+
+            {!isSupabaseConfigured ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: "rgba(239,246,255,0.75)",
+                  lineHeight: 1.75
+                }}
+              >
+                Review submissions will be available once Supabase environment
+                variables are configured.
+              </p>
+            ) : currentUser ? (
+              <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
+                <div style={{ display: "grid", gap: "0.5rem" }}>
+                  <span style={{ color: "rgba(239,246,255,0.78)", fontWeight: 700 }}>
+                    Your rating
+                  </span>
+                  <Stars rating={rating} interactive onChange={setRating} />
+                </div>
+
+                <label style={{ display: "grid", gap: "0.5rem" }}>
+                  <span style={{ color: "rgba(239,246,255,0.78)", fontWeight: 700 }}>
+                    Review
+                  </span>
+                  <textarea
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    placeholder="Write a review about your learning experience..."
+                    rows={5}
+                    className="reviews-textarea"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="reviews-submit-button"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Review"}
+                </button>
+              </form>
+            ) : (
+              <div style={{ display: "grid", gap: "1rem" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "rgba(239,246,255,0.75)",
+                    lineHeight: 1.75
+                  }}
+                >
+                  Log in to EV Academy to submit a review using your student profile.
+                </p>
+                <Link href="/academy/login" className="reviews-submit-button">
+                  Login to Review
+                </Link>
+              </div>
+            )}
+
+            {statusMessage ? (
+              <p
+                aria-live="polite"
+                style={{
+                  margin: 0,
+                  color: statusMessage.includes("Thank you") ? "#bbf7d0" : "#fecaca",
+                  lineHeight: 1.6
+                }}
+              >
+                {statusMessage}
+              </p>
+            ) : null}
+          </motion.div>
 
           <motion.div
             variants={reducedMotion ? undefined : itemVariants}
-            className="reviews-supporting"
+            className="reviews-grid"
           >
-            {supportingReviews.map((review) => (
-              <ReviewCard
-                key={review.id}
-                review={review}
-                emphasis="supporting"
-                reducedMotion={reducedMotion}
-              />
-            ))}
+            {filteredReviews.length > 0 ? (
+              filteredReviews.map((review) => (
+                <ReviewCard key={review.id} review={review} />
+              ))
+            ) : (
+              <p
+                style={{
+                  margin: 0,
+                  color: "rgba(239,246,255,0.72)",
+                  lineHeight: 1.7
+                }}
+              >
+                No reviews are available for this source yet.
+              </p>
+            )}
           </motion.div>
         </div>
       </motion.div>
