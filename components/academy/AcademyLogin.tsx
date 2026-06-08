@@ -71,7 +71,9 @@ export function AcademyLogin() {
 
     if (mode === "register") {
       setSuccessMessage(
-        "Account created. If email confirmation is enabled, please check your inbox."
+        result.emailConfirmationRequired
+          ? "Account created successfully. Please check your email to confirm your account before logging in."
+          : "Account created successfully. Please check your email if confirmation is required."
       );
     }
 

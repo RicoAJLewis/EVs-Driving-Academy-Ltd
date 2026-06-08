@@ -9,10 +9,7 @@ import {
   type ReactNode
 } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  academyStorageKeys,
-  demoAcademyUsers
-} from "@/lib/academy-auth";
+import { academyStorageKeys } from "@/lib/academy-auth";
 import {
   createAcademyId,
   defaultAcademyComments,
@@ -36,7 +33,6 @@ import type {
   AcademySection,
   AcademyUser,
   AcademyVideo,
-  StoredAcademyUser,
   UserRole
 } from "@/types/academy";
 
@@ -44,6 +40,7 @@ type LoginResult = {
   success: boolean;
   error?: string;
   user?: AcademyUser;
+  emailConfirmationRequired?: boolean;
 };
 
 type RegisterResult = LoginResult;
@@ -51,7 +48,6 @@ type RegisterResult = LoginResult;
 type AcademyContextValue = {
   isReady: boolean;
   currentUser: AcademyUser | null;
-  users: StoredAcademyUser[];
   sections: AcademySection[];
   videos: AcademyVideo[];
   comments: AcademyComment[];
@@ -242,7 +238,6 @@ function stripResolvedVideoFields(videos: AcademyVideo[]) {
 export function AcademyProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
-  const [users, setUsers] = useState<StoredAcademyUser[]>(demoAcademyUsers);
   const [sections, setSections] = useState<AcademySection[]>(defaultAcademySections);
   const [videos, setVideos] = useState<AcademyVideo[]>(defaultAcademyVideos);
   const [comments, setComments] = useState<AcademyComment[]>(defaultAcademyComments);
@@ -252,10 +247,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     const loadAcademyState = async () => {
-      const storedUsers = parseStoredValue<StoredAcademyUser[]>(
-        window.localStorage.getItem(academyStorageKeys.users),
-        demoAcademyUsers
-      );
       const storedData = parseStoredValue<{
         sections: AcademySection[];
         videos: AcademyVideo[];
@@ -274,7 +265,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setUsers(storedUsers);
       setSections(storedData.sections);
       setVideos(hydratedVideos);
       setComments(storedData.comments);
@@ -302,14 +292,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       authSubscription?.data.subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (!isReady) {
-      return;
-    }
-
-    window.localStorage.setItem(academyStorageKeys.users, JSON.stringify(users));
-  }, [isReady, users]);
 
   useEffect(() => {
     if (!isReady) {
@@ -409,9 +391,16 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     });
 
     if (error || !data.user) {
+      const errorMessage = error?.message ?? "Invalid email or password.";
+      const invalidCredentials = errorMessage
+        .toLowerCase()
+        .includes("invalid login credentials");
+
       return {
         success: false,
-        error: error?.message ?? "Invalid email or password."
+        error: invalidCredentials
+          ? "Invalid login credentials. Please make sure this account was created through the new visitor account system."
+          : errorMessage
       };
     }
 
@@ -443,6 +432,10 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
         email: normalizedEmail,
         password,
         options: {
+          emailRedirectTo:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/academy/login`
+              : undefined,
           data: {
             name: name.trim() || "EV Academy Visitor",
             role: "visitor"
@@ -457,9 +450,15 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        if (!data.session) {
+          return {
+            success: true,
+            emailConfirmationRequired: true
+          };
+        }
+
         const publicUser = toAcademyUserFromSupabase(data.user);
         setCurrentUser(publicUser);
-
         return {
           success: true,
           user: publicUser
@@ -846,7 +845,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     () => ({
       isReady,
       currentUser,
-      users,
       sections: sortedSections,
       videos: computedVideos,
       comments,
@@ -888,7 +886,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       isReady,
       sections,
       sortedSections,
-      users,
       visibleSections,
       visibleVideos
     ]

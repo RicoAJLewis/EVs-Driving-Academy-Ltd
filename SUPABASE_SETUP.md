@@ -50,3 +50,25 @@ Optional update/delete protection can be added later if review editing is introd
 
 For Academy admin access, set the Supabase user's `user_metadata.role` to `admin`.
 Visitor accounts created from the website are assigned `role: "visitor"`.
+
+## Admin User
+
+Old mock users such as `admin@evacademy.com` do not work unless they are created in Supabase Authentication.
+
+To create an admin:
+
+1. Open Supabase > Authentication > Users.
+2. Click `Add user` > `Create new user`.
+3. Enter the admin email and password.
+4. Open the new user record.
+5. Add this to the user's metadata:
+
+```json
+{
+  "role": "admin",
+  "name": "Admin User"
+}
+```
+
+The frontend reads `user_metadata.role === "admin"` to allow access to `/academy/admin`.
+If the role is missing, the user is treated as a normal visitor.

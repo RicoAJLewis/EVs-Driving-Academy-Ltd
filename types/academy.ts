@@ -7,10 +7,6 @@ export type AcademyUser = {
   role: UserRole;
 };
 
-export type StoredAcademyUser = AcademyUser & {
-  password: string;
-};
-
 export type AcademySection = {
   id: string;
   title: string;
