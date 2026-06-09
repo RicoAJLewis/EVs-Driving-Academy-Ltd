@@ -172,7 +172,10 @@ function getDisplayNameFromUser(user: User) {
 }
 
 function toAcademyUserFromSupabase(user: User): AcademyUser {
-  const role = user.user_metadata?.role === "admin" ? "admin" : "visitor";
+  const role =
+    user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
+      ? "admin"
+      : "visitor";
 
   return {
     id: user.id,
@@ -434,7 +437,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
         options: {
           emailRedirectTo:
             typeof window !== "undefined"
-              ? `${window.location.origin}/academy/login`
+              ? `${window.location.origin}/academy/auth/callback`
               : undefined,
           data: {
             name: name.trim() || "EV Academy Visitor",

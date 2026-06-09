@@ -55,6 +55,7 @@ type SupabaseReviewRow = {
 
 function getDisplayNameFromSessionUser(user: {
   email?: string;
+  app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 }) {
   const metadataName =
@@ -69,6 +70,15 @@ function getDisplayNameFromSessionUser(user: {
     user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
     "EV Academy Visitor"
   );
+}
+
+function getRoleFromSessionUser(user: {
+  app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
+}) {
+  return user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
+    ? "admin"
+    : "visitor";
 }
 
 function toSiteReview(row: SupabaseReviewRow): SiteReview {
@@ -282,7 +292,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
               id: sessionUser.id,
               name: getDisplayNameFromSessionUser(sessionUser),
               email: sessionUser.email ?? "",
-              role: sessionUser.user_metadata?.role === "admin" ? "admin" : "visitor"
+              role: getRoleFromSessionUser(sessionUser)
             }
           : null
       );
@@ -309,7 +319,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
               id: sessionUser.id,
               name: getDisplayNameFromSessionUser(sessionUser),
               email: sessionUser.email ?? "",
-              role: sessionUser.user_metadata?.role === "admin" ? "admin" : "visitor"
+              role: getRoleFromSessionUser(sessionUser)
             }
           : null
       );

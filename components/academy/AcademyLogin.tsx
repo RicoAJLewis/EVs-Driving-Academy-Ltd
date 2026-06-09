@@ -20,6 +20,15 @@ export function AcademyLogin() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("confirmed") === "1") {
+      setSuccessMessage("Email confirmed successfully. You can now log in.");
+      window.history.replaceState(null, "", "/academy/login");
+    }
+  }, []);
+
+  useEffect(() => {
     if (isReady && currentUser) {
       router.replace(getAcademyRedirectForRole(currentUser.role));
     }
@@ -52,7 +61,7 @@ export function AcademyLogin() {
       mode === "reset"
         ? await requestPasswordReset(
             email,
-            `${window.location.origin}/academy/login`
+            `${window.location.origin}/academy/reset-password`
           )
         : mode === "login"
           ? await login(email, password)
