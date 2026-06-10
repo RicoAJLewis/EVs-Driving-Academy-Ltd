@@ -49,7 +49,12 @@ export type AcademyComment = {
 export type AcademyAnalytics = {
   totalViews: number;
   totalVideos: number;
+  publishedVideos: number;
+  unpublishedVideos: number;
+  totalSections: number;
   totalComments: number;
+  totalStudents: number;
+  watchedCount: number;
   mostWatchedVideo: AcademyVideo | null;
   topPerformingSection: AcademySection | null;
   viewsPerVideo: AcademyVideo[];

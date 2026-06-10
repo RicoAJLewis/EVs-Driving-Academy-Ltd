@@ -7,12 +7,12 @@ import {
   getAcademyVideoRenderMode,
   normalizeAcademyVideoUrl
 } from "@/lib/academy-media";
-import type { AcademyVideo } from "@/types/academy";
+import type { AcademySection, AcademyVideo } from "@/types/academy";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
 
-type AdminTab = "overview" | "videos" | "comments" | "analytics";
+type AdminTab = "overview" | "sections" | "videos" | "comments" | "analytics";
 type Feedback = {
   tone: "success" | "error";
   message: string;
@@ -20,7 +20,8 @@ type Feedback = {
 
 const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "videos", label: "Videos" },
+  { id: "sections", label: "Sections" },
+  { id: "videos", label: "Videos / Playlists" },
   { id: "comments", label: "Comments" },
   { id: "analytics", label: "Analytics" }
 ];
@@ -31,8 +32,10 @@ const emptyVideoForm = {
   videoUrl: "",
   thumbnailUrl: "",
   category: "Beginner Lessons",
+  sectionId: "",
   sortOrder: 0,
-  isPublished: false
+  isPublished: false,
+  isFeatured: false
 };
 
 function isValidUrl(value: string) {
@@ -84,7 +87,7 @@ function VideoPreview({
 
   return (
     <div style={previewPanelStyle}>
-      <span style={previewLabelStyle}>Preview</span>
+      <span style={previewLabelStyle}>Live preview</span>
       {renderMode === "placeholder" ? (
         <div style={emptyPreviewStyle}>
           Add an external video URL to preview it here. YouTube unlisted and Vimeo
@@ -92,8 +95,8 @@ function VideoPreview({
         </div>
       ) : renderMode === "file" ? (
         <div style={emptyPreviewStyle}>
-          Direct file URLs can play, but large video uploads should stay outside the
-          website repo. Use YouTube, Vimeo, TikTok, or hosted media links first.
+          This looks like a direct file URL. The link can be saved if it is public,
+          but large video uploads should stay outside the website repo.
         </div>
       ) : (
         <iframe
@@ -116,28 +119,177 @@ function VideoPreview({
           }}
         />
       ) : null}
+      <p style={{ margin: 0, color: "rgba(239,246,255,0.68)", lineHeight: 1.6 }}>
+        If a platform blocks embedding, the video record can still be saved, but
+        playback may need to open externally.
+      </p>
     </div>
+  );
+}
+
+function SectionEditor({
+  section,
+  onSave,
+  onDelete,
+  onMove
+}: {
+  section: AcademySection;
+  onSave: (
+    sectionId: string,
+    updates: Partial<Pick<AcademySection, "title" | "description" | "isVisible" | "order">>
+  ) => Promise<void>;
+  onDelete: (sectionId: string) => Promise<void>;
+  onMove: (sectionId: string, direction: "up" | "down") => Promise<void>;
+}) {
+  const [draft, setDraft] = useState({
+    title: section.title,
+    description: section.description,
+    sortOrder: section.order,
+    isPublished: section.isVisible
+  });
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!draft.title.trim()) {
+      setFeedback({ tone: "error", message: "Section title is required." });
+      return;
+    }
+
+    try {
+      await onSave(section.id, {
+        title: draft.title,
+        description: draft.description,
+        order: Number(draft.sortOrder) || 0,
+        isVisible: draft.isPublished
+      });
+      setFeedback({ tone: "success", message: "Section updated." });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to update section."
+      });
+    }
+  };
+
+  return (
+    <article style={cardStyle}>
+      <form onSubmit={handleSave} style={{ display: "grid", gap: "1rem" }}>
+        <div className="academy-form-grid academy-form-grid-3">
+          <label style={fieldStyle}>
+            <span>Title</span>
+            <input
+              value={draft.title}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, title: event.target.value }))
+              }
+              style={inputStyle}
+            />
+          </label>
+          <label style={fieldStyle}>
+            <span>Sort order</span>
+            <input
+              type="number"
+              value={draft.sortOrder}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  sortOrder: Number(event.target.value)
+                }))
+              }
+              style={inputStyle}
+            />
+          </label>
+          <label style={{ ...fieldStyle, justifyContent: "end" }}>
+            <span>Visibility</span>
+            <label style={{ display: "flex", gap: "0.55rem", alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={draft.isPublished}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    isPublished: event.target.checked
+                  }))
+                }
+              />
+              Published
+            </label>
+          </label>
+        </div>
+        <label style={fieldStyle}>
+          <span>Description</span>
+          <textarea
+            rows={3}
+            value={draft.description}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                description: event.target.value
+              }))
+            }
+            style={textareaStyle}
+          />
+        </label>
+        {feedback ? <FeedbackBanner feedback={feedback} /> : null}
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+          <button type="submit" style={secondaryButtonStyle}>
+            Save Section
+          </button>
+          <button type="button" onClick={() => onMove(section.id, "up")} style={secondaryButtonStyle}>
+            Move Up
+          </button>
+          <button type="button" onClick={() => onMove(section.id, "down")} style={secondaryButtonStyle}>
+            Move Down
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Delete this section? Videos in this section will be unassigned.")) {
+                void onDelete(section.id);
+              }
+            }}
+            style={dangerButtonStyle}
+          >
+            Delete
+          </button>
+        </div>
+      </form>
+    </article>
   );
 }
 
 function VideoEditor({
   video,
+  sections,
   onSave,
   onDelete,
-  onTogglePublish
+  onTogglePublish,
+  onSetFeatured,
+  onMove
 }: {
   video: AcademyVideo;
+  sections: AcademySection[];
   onSave: (
     videoId: string,
     updates: Partial<
       Pick<
         AcademyVideo,
-        "title" | "description" | "videoUrl" | "thumbnailUrl" | "category" | "order"
+        | "sectionId"
+        | "title"
+        | "description"
+        | "videoUrl"
+        | "thumbnailUrl"
+        | "category"
+        | "order"
       >
     >
   ) => Promise<void>;
   onDelete: (videoId: string) => Promise<void>;
   onTogglePublish: (videoId: string) => Promise<void>;
+  onSetFeatured: (videoId: string) => Promise<void>;
+  onMove: (videoId: string, direction: "up" | "down") => Promise<void>;
 }) {
   const [draft, setDraft] = useState({
     title: video.title,
@@ -145,6 +297,7 @@ function VideoEditor({
     videoUrl: video.videoUrl,
     thumbnailUrl: video.thumbnailUrl ?? "",
     category: video.category,
+    sectionId: video.sectionId,
     sortOrder: video.order
   });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -165,12 +318,15 @@ function VideoEditor({
     setIsSaving(true);
 
     try {
+      const selectedSection = sections.find((section) => section.id === draft.sectionId);
+
       await onSave(video.id, {
         title: draft.title,
         description: draft.description,
         videoUrl: draft.videoUrl,
         thumbnailUrl: draft.thumbnailUrl,
-        category: draft.category,
+        category: draft.category || selectedSection?.title || "General",
+        sectionId: draft.sectionId,
         order: Number(draft.sortOrder) || 0
       });
       setFeedback({ tone: "success", message: "Video updated successfully." });
@@ -201,10 +357,20 @@ function VideoEditor({
               {video.title}
             </h3>
             <p style={{ margin: "0.35rem 0 0", color: "rgba(239,246,255,0.65)" }}>
-              {video.isVisible ? "Published" : "Unpublished"} · {video.category}
+              {video.isVisible ? "Published" : "Unpublished"} / {video.category}
+              {video.isFeatured ? " / Featured" : ""}
             </p>
           </div>
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => onMove(video.id, "up")} style={secondaryButtonStyle}>
+              Move Up
+            </button>
+            <button type="button" onClick={() => onMove(video.id, "down")} style={secondaryButtonStyle}>
+              Move Down
+            </button>
+            <button type="button" onClick={() => onSetFeatured(video.id)} style={secondaryButtonStyle}>
+              {video.isFeatured ? "Remove Featured" : "Set Featured"}
+            </button>
             <button type="button" onClick={() => onTogglePublish(video.id)} style={secondaryButtonStyle}>
               {video.isVisible ? "Unpublish" : "Publish"}
             </button>
@@ -239,14 +405,28 @@ function VideoEditor({
             />
           </label>
           <label style={fieldStyle}>
-            <span>Category</span>
-            <input
-              value={draft.category}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, category: event.target.value }))
-              }
+            <span>Section</span>
+            <select
+              value={draft.sectionId}
+              onChange={(event) => {
+                const selectedSection = sections.find(
+                  (section) => section.id === event.target.value
+                );
+
+                setDraft((current) => ({
+                  ...current,
+                  sectionId: event.target.value,
+                  category: selectedSection?.title ?? current.category
+                }));
+              }}
               style={inputStyle}
-            />
+            >
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.title}
+                </option>
+              ))}
+            </select>
           </label>
           <label style={fieldStyle}>
             <span>Sort order</span>
@@ -322,17 +502,27 @@ export function AdminDashboard() {
   const {
     analytics,
     comments,
+    createSection,
     createVideo,
     currentUser,
     deleteComment,
+    deleteSection,
     deleteVideo,
     errorMessage,
+    featuredVideo,
     logout,
+    moveSection,
+    moveVideo,
+    sections,
+    setVideoFeatured,
     toggleVideoVisibility,
+    updateSection,
     updateVideo,
     videos
   } = useAcademy();
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+  const [newSectionTitle, setNewSectionTitle] = useState("");
+  const [newSectionDescription, setNewSectionDescription] = useState("");
   const [newVideo, setNewVideo] = useState(emptyVideoForm);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -341,6 +531,28 @@ export function AdminDashboard() {
     () => [...videos].sort((a, b) => a.order - b.order),
     [videos]
   );
+
+  const handleCreateSection = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFeedback(null);
+
+    if (!newSectionTitle.trim()) {
+      setFeedback({ tone: "error", message: "Please add a section title." });
+      return;
+    }
+
+    try {
+      await createSection(newSectionTitle, newSectionDescription);
+      setNewSectionTitle("");
+      setNewSectionDescription("");
+      setFeedback({ tone: "success", message: "Section added successfully." });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to add section."
+      });
+    }
+  };
 
   const handleCreateVideo = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -354,23 +566,36 @@ export function AdminDashboard() {
       return;
     }
 
+    if (!newVideo.sectionId && sections.length > 0) {
+      setFeedback({ tone: "error", message: "Please choose a section." });
+      return;
+    }
+
     setIsCreating(true);
 
     try {
+      const selectedSection = sections.find(
+        (section) => section.id === newVideo.sectionId
+      );
+
       await createVideo({
-        sectionId: "",
+        sectionId: newVideo.sectionId,
         title: newVideo.title,
         description: newVideo.description,
-        category: newVideo.category,
+        category: newVideo.category || selectedSection?.title || "General",
         videoUrl: newVideo.videoUrl,
         thumbnailUrl: newVideo.thumbnailUrl,
         isVisible: newVideo.isPublished,
-        isFeatured: false,
+        isFeatured: newVideo.isFeatured,
         resolvedVideoUrl: "",
         resolvedThumbnailUrl: "",
         order: newVideo.sortOrder
       });
-      setNewVideo(emptyVideoForm);
+      setNewVideo({
+        ...emptyVideoForm,
+        sectionId: sections[0]?.id ?? "",
+        category: sections[0]?.title ?? emptyVideoForm.category
+      });
       setFeedback({ tone: "success", message: "Video record added successfully." });
     } catch (error) {
       setFeedback({
@@ -383,25 +608,106 @@ export function AdminDashboard() {
   };
 
   const renderOverview = () => (
-    <div className="academy-admin-stats">
-      <div style={cardStyle}>
-        <strong style={statStyle}>{analytics.totalVideos}</strong>
-        <div style={mutedStyle}>Total Videos</div>
+    <div style={{ display: "grid", gap: "1.4rem" }}>
+      <div className="academy-admin-stats">
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalVideos}</strong>
+          <div style={mutedStyle}>Total Videos</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.publishedVideos}</strong>
+          <div style={mutedStyle}>Published Videos</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalSections}</strong>
+          <div style={mutedStyle}>Sections</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalComments}</strong>
+          <div style={mutedStyle}>Comments</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalStudents}</strong>
+          <div style={mutedStyle}>Students</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.watchedCount}</strong>
+          <div style={mutedStyle}>Watched Records</div>
+        </div>
       </div>
+
       <div style={cardStyle}>
-        <strong style={statStyle}>{analytics.totalComments}</strong>
-        <div style={mutedStyle}>Total Comments</div>
+        <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+          Featured Video
+        </h2>
+        <p style={{ margin: "0.6rem 0 0", color: "rgba(239,246,255,0.78)" }}>
+          {featuredVideo
+            ? `${featuredVideo.title} is currently featured.`
+            : "No featured video is selected yet."}
+        </p>
       </div>
-      <div style={cardStyle}>
-        <strong style={statStyle}>{analytics.totalViews}</strong>
-        <div style={mutedStyle}>Watched Records</div>
+
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <button type="button" onClick={() => setActiveTab("videos")} style={primaryButtonStyle}>
+          Add Video
+        </button>
+        <button type="button" onClick={() => setActiveTab("sections")} style={secondaryButtonStyle}>
+          Add Section
+        </button>
+        <button type="button" onClick={() => setActiveTab("comments")} style={secondaryButtonStyle}>
+          View Comments
+        </button>
       </div>
-      <div style={cardStyle}>
-        <strong style={{ color: "#eff6ff", fontSize: "1.1rem" }}>
-          {analytics.mostWatchedVideo?.title ?? "No data yet"}
-        </strong>
-        <div style={mutedStyle}>Most Watched Video</div>
-      </div>
+    </div>
+  );
+
+  const renderSections = () => (
+    <div style={{ display: "grid", gap: "1.4rem" }}>
+      <form onSubmit={handleCreateSection} style={cardStyle}>
+        <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+          Add Section
+        </h2>
+        {feedback ? <FeedbackBanner feedback={feedback} /> : null}
+        <div className="academy-form-grid" style={{ marginTop: "1rem" }}>
+          <label style={fieldStyle}>
+            <span>Section title</span>
+            <input
+              value={newSectionTitle}
+              onChange={(event) => setNewSectionTitle(event.target.value)}
+              style={inputStyle}
+            />
+          </label>
+          <label style={fieldStyle}>
+            <span>Description</span>
+            <input
+              value={newSectionDescription}
+              onChange={(event) => setNewSectionDescription(event.target.value)}
+              style={inputStyle}
+            />
+          </label>
+        </div>
+        <button type="submit" style={primaryButtonStyle}>
+          Add Section
+        </button>
+      </form>
+
+      {sections.length === 0 ? (
+        <div style={cardStyle}>
+          <p style={{ margin: 0, color: "rgba(239,246,255,0.74)" }}>
+            No sections have been added yet.
+          </p>
+        </div>
+      ) : (
+        sections.map((section) => (
+          <SectionEditor
+            key={section.id}
+            section={section}
+            onSave={updateSection}
+            onDelete={deleteSection}
+            onMove={moveSection}
+          />
+        ))
+      )}
     </div>
   );
 
@@ -413,7 +719,8 @@ export function AdminDashboard() {
         </h2>
         <p style={{ ...mutedStyle, margin: "0.55rem 0 1rem", lineHeight: 1.7 }}>
           Use YouTube unlisted, Vimeo, TikTok, Instagram, or another public embed URL.
-          Large video uploads are intentionally not stored in this app or repo.
+          Large video uploads are intentionally not stored in this app, browser
+          storage, GitHub, or Vercel.
         </p>
 
         {feedback ? <FeedbackBanner feedback={feedback} /> : null}
@@ -430,17 +737,29 @@ export function AdminDashboard() {
             />
           </label>
           <label style={fieldStyle}>
-            <span>Category</span>
-            <input
-              value={newVideo.category}
-              onChange={(event) =>
+            <span>Section</span>
+            <select
+              value={newVideo.sectionId || sections[0]?.id || ""}
+              onChange={(event) => {
+                const selectedSection = sections.find(
+                  (section) => section.id === event.target.value
+                );
+
                 setNewVideo((current) => ({
                   ...current,
-                  category: event.target.value
-                }))
-              }
+                  sectionId: event.target.value,
+                  category: selectedSection?.title ?? current.category
+                }));
+              }}
               style={inputStyle}
-            />
+            >
+              <option value="">Choose a section</option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.title}
+                </option>
+              ))}
+            </select>
           </label>
           <label style={fieldStyle}>
             <span>Sort order</span>
@@ -504,27 +823,34 @@ export function AdminDashboard() {
           />
         </label>
 
-        <label
-          style={{
-            display: "flex",
-            gap: "0.6rem",
-            alignItems: "center",
-            marginTop: "1rem",
-            color: "#eff6ff"
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={newVideo.isPublished}
-            onChange={(event) =>
-              setNewVideo((current) => ({
-                ...current,
-                isPublished: event.target.checked
-              }))
-            }
-          />
-          Publish video
-        </label>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginTop: "1rem" }}>
+          <label style={{ display: "flex", gap: "0.6rem", alignItems: "center", color: "#eff6ff" }}>
+            <input
+              type="checkbox"
+              checked={newVideo.isPublished}
+              onChange={(event) =>
+                setNewVideo((current) => ({
+                  ...current,
+                  isPublished: event.target.checked
+                }))
+              }
+            />
+            Publish video
+          </label>
+          <label style={{ display: "flex", gap: "0.6rem", alignItems: "center", color: "#eff6ff" }}>
+            <input
+              type="checkbox"
+              checked={newVideo.isFeatured}
+              onChange={(event) =>
+                setNewVideo((current) => ({
+                  ...current,
+                  isFeatured: event.target.checked
+                }))
+              }
+            />
+            Feature video
+          </label>
+        </div>
 
         <div className="academy-form-grid" style={{ marginTop: "1rem" }}>
           <VideoPreview
@@ -535,7 +861,7 @@ export function AdminDashboard() {
         </div>
 
         <button type="submit" style={primaryButtonStyle} disabled={isCreating}>
-          {isCreating ? "Adding..." : "Add Video"}
+          {isCreating ? "Adding..." : "Add Video Link"}
         </button>
       </form>
 
@@ -550,9 +876,12 @@ export function AdminDashboard() {
           <VideoEditor
             key={video.id}
             video={video}
+            sections={sections}
             onSave={updateVideo}
             onDelete={deleteVideo}
             onTogglePublish={toggleVideoVisibility}
+            onSetFeatured={setVideoFeatured}
+            onMove={moveVideo}
           />
         ))
       )}
@@ -616,7 +945,33 @@ export function AdminDashboard() {
 
   const renderAnalytics = () => (
     <div style={{ display: "grid", gap: "1.4rem" }}>
-      {renderOverview()}
+      <div className="academy-admin-stats">
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalVideos}</strong>
+          <div style={mutedStyle}>Total Videos</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.publishedVideos}</strong>
+          <div style={mutedStyle}>Published Videos</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.unpublishedVideos}</strong>
+          <div style={mutedStyle}>Unpublished Videos</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalSections}</strong>
+          <div style={mutedStyle}>Sections</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalComments}</strong>
+          <div style={mutedStyle}>Comments</div>
+        </div>
+        <div style={cardStyle}>
+          <strong style={statStyle}>{analytics.totalStudents}</strong>
+          <div style={mutedStyle}>Students</div>
+        </div>
+      </div>
+
       <div style={cardStyle}>
         <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.3rem" }}>
           Video Performance
@@ -626,18 +981,23 @@ export function AdminDashboard() {
             <thead>
               <tr>
                 <th style={tableHeaderStyle}>Video</th>
-                <th style={tableHeaderStyle}>Category</th>
+                <th style={tableHeaderStyle}>Section</th>
                 <th style={tableHeaderStyle}>Published</th>
+                <th style={tableHeaderStyle}>Featured</th>
                 <th style={tableHeaderStyle}>Watched</th>
                 <th style={tableHeaderStyle}>Comments</th>
               </tr>
             </thead>
             <tbody>
-              {videos.map((video) => (
+              {analytics.viewsPerVideo.map((video) => (
                 <tr key={video.id}>
                   <td style={tableCellStyle}>{video.title}</td>
-                  <td style={tableCellStyle}>{video.category}</td>
+                  <td style={tableCellStyle}>
+                    {sections.find((section) => section.id === video.sectionId)?.title ??
+                      video.category}
+                  </td>
                   <td style={tableCellStyle}>{video.isVisible ? "Yes" : "No"}</td>
+                  <td style={tableCellStyle}>{video.isFeatured ? "Yes" : "No"}</td>
                   <td style={tableCellStyle}>{video.viewCount}</td>
                   <td style={tableCellStyle}>{video.commentCount}</td>
                 </tr>
@@ -653,7 +1013,7 @@ export function AdminDashboard() {
     <AcademyProtected allowedRoles={["admin"]}>
       <AcademyPageLayout
         title="EV Academy Admin"
-        subtitle="Manage tutorial video records, comments, publishing, and academy analytics."
+        subtitle="Manage tutorial sections, playlists, videos, comments, and academy analytics."
         actions={
           <>
             {currentUser ? (
@@ -717,6 +1077,7 @@ export function AdminDashboard() {
           </div>
 
           {activeTab === "overview" ? renderOverview() : null}
+          {activeTab === "sections" ? renderSections() : null}
           {activeTab === "videos" ? renderVideos() : null}
           {activeTab === "comments" ? renderComments() : null}
           {activeTab === "analytics" ? renderAnalytics() : null}

@@ -37,7 +37,7 @@ type RegisterResult = LoginResult;
 type VideoInput = Omit<
   AcademyVideo,
   "id" | "order" | "createdAt" | "updatedAt" | "viewCount" | "commentCount"
->;
+> & { order?: number };
 
 type AcademyContextValue = {
   isReady: boolean;
@@ -60,14 +60,14 @@ type AcademyContextValue = {
   ) => Promise<RegisterResult>;
   requestPasswordReset: (email: string, redirectTo: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
-  createSection: (title: string, description: string) => void;
+  createSection: (title: string, description: string) => Promise<void>;
   updateSection: (
     sectionId: string,
-    updates: Partial<Pick<AcademySection, "title" | "description" | "isVisible">>
-  ) => void;
-  deleteSection: (sectionId: string) => void;
-  moveSection: (sectionId: string, direction: "up" | "down") => void;
-  createVideo: (input: VideoInput & { order?: number }) => Promise<void>;
+    updates: Partial<Pick<AcademySection, "title" | "description" | "isVisible" | "order">>
+  ) => Promise<void>;
+  deleteSection: (sectionId: string) => Promise<void>;
+  moveSection: (sectionId: string, direction: "up" | "down") => Promise<void>;
+  createVideo: (input: VideoInput) => Promise<void>;
   updateVideo: (
     videoId: string,
     updates: Partial<
@@ -109,8 +109,19 @@ type ProfileRow = {
   role: UserRole | null;
 };
 
+type SectionRow = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  sort_order: number | null;
+  is_published: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 type VideoRow = {
   id: string;
+  section_id: string | null;
   title: string | null;
   description: string | null;
   video_url: string | null;
@@ -118,6 +129,7 @@ type VideoRow = {
   category: string | null;
   sort_order: number | null;
   is_published: boolean | null;
+  is_featured: boolean | null;
   created_by: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -141,15 +153,7 @@ type ProgressRow = {
 };
 
 const AcademyContext = createContext<AcademyContextValue | null>(null);
-const DEFAULT_CATEGORY = "General";
-
-function slugifyCategory(category: string) {
-  return category
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "general";
-}
+const DEFAULT_SECTION_TITLE = "General";
 
 function getDisplayNameFromUser(user: User, profile?: ProfileRow | null) {
   const metadataName =
@@ -188,14 +192,42 @@ function toAcademyUserFromSupabase(user: User, profile?: ProfileRow | null): Aca
   };
 }
 
-function toAcademyVideo(row: VideoRow, commentCount: number, viewCount: number): AcademyVideo {
-  const category = row.category?.trim() || DEFAULT_CATEGORY;
+function isValidExternalVideoUrl(videoUrl: string) {
+  try {
+    const url = new URL(videoUrl.trim());
+    return ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function toAcademySection(row: SectionRow): AcademySection {
+  return {
+    id: row.id,
+    title: row.title?.trim() || DEFAULT_SECTION_TITLE,
+    description: row.description?.trim() || "",
+    order: row.sort_order ?? 0,
+    isVisible: row.is_published ?? true,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString()
+  };
+}
+
+function toAcademyVideo(
+  row: VideoRow,
+  fallbackSectionId: string,
+  fallbackSectionTitle: string,
+  commentCount: number,
+  viewCount: number
+): AcademyVideo {
   const normalizedVideoUrl = normalizeAcademyVideoUrl(row.video_url ?? "");
   const normalizedThumbnailUrl = normalizeAcademyThumbnailUrl(row.thumbnail_url ?? "");
+  const sectionId = row.section_id ?? fallbackSectionId;
+  const category = row.category?.trim() || fallbackSectionTitle || DEFAULT_SECTION_TITLE;
 
   return {
     id: row.id,
-    sectionId: slugifyCategory(category),
+    sectionId,
     title: row.title?.trim() || "Untitled tutorial",
     description: row.description?.trim() || "",
     category,
@@ -205,7 +237,7 @@ function toAcademyVideo(row: VideoRow, commentCount: number, viewCount: number):
     resolvedThumbnailUrl: normalizedThumbnailUrl,
     order: row.sort_order ?? 0,
     isVisible: row.is_published ?? false,
-    isFeatured: false,
+    isFeatured: row.is_featured ?? false,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? row.created_at ?? new Date().toISOString(),
     viewCount,
@@ -224,22 +256,15 @@ function toAcademyProgress(row: ProgressRow): AcademyProgress {
   };
 }
 
-function isValidExternalVideoUrl(videoUrl: string) {
-  try {
-    const url = new URL(videoUrl.trim());
-    return ["http:", "https:"].includes(url.protocol);
-  } catch {
-    return false;
-  }
-}
-
 export function AcademyProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
+  const [sections, setSections] = useState<AcademySection[]>([]);
   const [videos, setVideos] = useState<AcademyVideo[]>([]);
   const [comments, setComments] = useState<AcademyComment[]>([]);
   const [progress, setProgress] = useState<AcademyProgress[]>([]);
+  const [studentCount, setStudentCount] = useState(0);
 
   const loadCurrentUser = useCallback(async (user: User | null) => {
     if (!user) {
@@ -272,6 +297,46 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       setErrorMessage(
         "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
       );
+      setIsReady(true);
+      return;
+    }
+
+    setErrorMessage("");
+
+    const [
+      sectionsResult,
+      videosResult,
+      progressResult,
+      studentsResult
+    ] = await Promise.all([
+      supabase
+        .from("academy_sections")
+        .select("id, title, description, sort_order, is_published, created_at, updated_at")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("academy_videos")
+        .select(
+          "id, section_id, title, description, video_url, thumbnail_url, category, sort_order, is_published, is_featured, created_by, created_at, updated_at"
+        )
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("video_progress")
+        .select("id, user_id, video_id, watched, watched_at, progress_seconds"),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "student")
+    ]);
+
+    if (sectionsResult.error || videosResult.error) {
+      setErrorMessage(
+        sectionsResult.error?.message ??
+          videosResult.error?.message ??
+          "Unable to load Academy data."
+      );
+      setSections([]);
       setVideos([]);
       setComments([]);
       setProgress([]);
@@ -279,42 +344,23 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setErrorMessage("");
-
-    const { data: videoRows, error: videosError } = await supabase
-      .from("academy_videos")
-      .select(
-        "id, title, description, video_url, thumbnail_url, category, sort_order, is_published, created_by, created_at, updated_at"
-      )
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: false });
-
-    if (videosError) {
-      setErrorMessage(videosError.message);
-      setVideos([]);
-      setIsReady(true);
-      return;
-    }
-
-    const videoIds = (videoRows ?? []).map((video) => video.id);
+    const sectionRows = (sectionsResult.data ?? []) as SectionRow[];
+    const videoRows = (videosResult.data ?? []) as VideoRow[];
+    const videoIds = videoRows.map((video) => video.id);
     let commentRows: CommentRow[] = [];
-    let progressRows: ProgressRow[] = [];
 
     if (videoIds.length > 0) {
-      const { data: commentsData } = await supabase
+      const { data: commentsData, error: commentsError } = await supabase
         .from("video_comments")
         .select("id, video_id, user_id, comment, created_at")
         .in("video_id", videoIds)
         .order("created_at", { ascending: false });
 
-      commentRows = (commentsData ?? []) as CommentRow[];
-
-      const { data: progressData } = await supabase
-        .from("video_progress")
-        .select("id, user_id, video_id, watched, watched_at, progress_seconds")
-        .in("video_id", videoIds);
-
-      progressRows = (progressData ?? []) as ProgressRow[];
+      if (commentsError) {
+        setErrorMessage(commentsError.message);
+      } else {
+        commentRows = (commentsData ?? []) as CommentRow[];
+      }
     }
 
     const commentUserIds = Array.from(
@@ -333,6 +379,18 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    const mappedSections = sectionRows.map(toAcademySection);
+    const fallbackSection =
+      mappedSections[0] ??
+      ({
+        id: "general",
+        title: DEFAULT_SECTION_TITLE,
+        description: "General EV Academy tutorials.",
+        order: 0,
+        isVisible: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      } satisfies AcademySection);
     const mappedComments = commentRows.map((row) => ({
       id: row.id,
       videoId: row.video_id ?? "",
@@ -342,20 +400,28 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       isVisible: true,
       createdAt: row.created_at ?? new Date().toISOString()
     }));
-    const mappedProgress = progressRows.map(toAcademyProgress);
+    const mappedProgress = ((progressResult.data ?? []) as ProgressRow[]).map(
+      toAcademyProgress
+    );
 
+    setSections(mappedSections);
     setComments(mappedComments);
     setProgress(mappedProgress);
+    setStudentCount(studentsResult.count ?? 0);
     setVideos(
-      ((videoRows ?? []) as VideoRow[]).map((video) =>
-        toAcademyVideo(
+      videoRows.map((video) => {
+        const section = mappedSections.find((item) => item.id === video.section_id);
+
+        return toAcademyVideo(
           video,
+          fallbackSection.id,
+          section?.title ?? fallbackSection.title,
           mappedComments.filter((comment) => comment.videoId === video.id).length,
           mappedProgress.filter(
             (item) => item.videoId === video.id && item.watched
           ).length
-        )
-      )
+        );
+      })
     );
     setIsReady(true);
   }, []);
@@ -396,22 +462,6 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     };
   }, [loadCurrentUser, refreshAcademyData]);
 
-  const sections = useMemo<AcademySection[]>(() => {
-    const categories = Array.from(new Set(videos.map((video) => video.category)));
-
-    return categories.map((category, index) => ({
-      id: slugifyCategory(category),
-      title: category,
-      description: `${category} tutorials from EVs Driving Academy.`,
-      order: index + 1,
-      isVisible: videos.some(
-        (video) => video.category === category && video.isVisible
-      ),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }));
-  }, [videos]);
-
   const computedVideos = useMemo(
     () =>
       [...videos].sort((a, b) => {
@@ -428,12 +478,21 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     [sections]
   );
   const visibleVideos = useMemo(
-    () => computedVideos.filter((video) => video.isVisible),
-    [computedVideos]
+    () =>
+      computedVideos.filter(
+        (video) =>
+          video.isVisible &&
+          sections.some((section) => section.id === video.sectionId && section.isVisible)
+      ),
+    [computedVideos, sections]
   );
-  const featuredVideo = useMemo(() => visibleVideos[0] ?? null, [visibleVideos]);
+  const featuredVideo = useMemo(
+    () => visibleVideos.find((video) => video.isFeatured) ?? visibleVideos[0] ?? null,
+    [visibleVideos]
+  );
 
   const analytics = useMemo<AcademyAnalytics>(() => {
+    const publishedVideos = computedVideos.filter((video) => video.isVisible).length;
     const totalViews = progress.filter((item) => item.watched).length;
     const mostWatchedVideo =
       [...computedVideos].sort((a, b) => b.viewCount - a.viewCount)[0] ?? null;
@@ -462,13 +521,18 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     return {
       totalViews,
       totalVideos: computedVideos.length,
+      publishedVideos,
+      unpublishedVideos: computedVideos.length - publishedVideos,
+      totalSections: sections.length,
       totalComments: comments.length,
+      totalStudents: studentCount,
+      watchedCount: totalViews,
       mostWatchedVideo,
       topPerformingSection,
       viewsPerVideo: [...computedVideos].sort((a, b) => b.viewCount - a.viewCount),
       recentComments
     };
-  }, [comments, computedVideos, progress, sections]);
+  }, [comments, computedVideos, progress, sections, studentCount]);
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     const supabase = getSupabaseClient();
@@ -584,7 +648,72 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     await refreshAcademyData();
   };
 
-  const createVideo = async (input: VideoInput & { order?: number }) => {
+  const createSection = async (title: string, description: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { error } = await supabase.from("academy_sections").insert({
+      title: title.trim(),
+      description: description.trim(),
+      sort_order: sections.length + 1,
+      is_published: true
+    });
+
+    if (error) throw new Error(error.message);
+    await refreshAcademyData();
+  };
+
+  const updateSection: AcademyContextValue["updateSection"] = async (
+    sectionId,
+    updates
+  ) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const payload: Record<string, string | number | boolean | null> = {};
+    if (updates.title !== undefined) payload.title = updates.title.trim();
+    if (updates.description !== undefined) {
+      payload.description = updates.description.trim();
+    }
+    if (updates.order !== undefined) payload.sort_order = updates.order;
+    if (updates.isVisible !== undefined) payload.is_published = updates.isVisible;
+
+    const { error } = await supabase
+      .from("academy_sections")
+      .update(payload)
+      .eq("id", sectionId);
+
+    if (error) throw new Error(error.message);
+    await refreshAcademyData();
+  };
+
+  const deleteSection = async (sectionId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { error } = await supabase
+      .from("academy_sections")
+      .delete()
+      .eq("id", sectionId);
+
+    if (error) throw new Error(error.message);
+    await refreshAcademyData();
+  };
+
+  const moveSection = async (sectionId: string, direction: "up" | "down") => {
+    const section = sections.find((item) => item.id === sectionId);
+
+    if (!section) return;
+
+    await updateSection(sectionId, {
+      order: Math.max(0, section.order + (direction === "up" ? -1 : 1))
+    });
+  };
+
+  const createVideo = async (input: VideoInput) => {
     const supabase = getSupabaseClient();
 
     if (!supabase || !currentUser) {
@@ -595,37 +724,39 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       throw new Error("Please enter a valid YouTube, Vimeo, TikTok, or Instagram URL.");
     }
 
+    const section = sections.find((item) => item.id === input.sectionId);
+
     const { error } = await supabase.from("academy_videos").insert({
+      section_id: section?.id ?? null,
       title: input.title.trim(),
       description: input.description.trim(),
       video_url: normalizeAcademyVideoUrl(input.videoUrl),
       thumbnail_url: normalizeAcademyThumbnailUrl(input.thumbnailUrl ?? ""),
-      category: input.category.trim() || DEFAULT_CATEGORY,
+      category: input.category.trim() || section?.title || DEFAULT_SECTION_TITLE,
       sort_order:
         input.order ??
-        videos.filter((video) => video.category === input.category).length + 1,
+        videos.filter((video) => video.sectionId === input.sectionId).length + 1,
       is_published: input.isVisible,
+      is_featured: input.isFeatured,
       created_by: currentUser.id
     });
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
+    if (error) throw new Error(error.message);
     await refreshAcademyData();
   };
 
   const updateVideo: AcademyContextValue["updateVideo"] = async (videoId, updates) => {
     const supabase = getSupabaseClient();
 
-    if (!supabase) {
-      throw new Error("Supabase is not configured.");
-    }
+    if (!supabase) throw new Error("Supabase is not configured.");
 
     const payload: Record<string, string | number | boolean | null> = {};
 
+    if (updates.sectionId !== undefined) payload.section_id = updates.sectionId || null;
     if (updates.title !== undefined) payload.title = updates.title.trim();
-    if (updates.description !== undefined) payload.description = updates.description.trim();
+    if (updates.description !== undefined) {
+      payload.description = updates.description.trim();
+    }
     if (updates.videoUrl !== undefined) {
       if (!isValidExternalVideoUrl(updates.videoUrl)) {
         throw new Error("Please enter a valid external video URL.");
@@ -636,64 +767,69 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       payload.thumbnail_url = normalizeAcademyThumbnailUrl(updates.thumbnailUrl);
     }
     if (updates.category !== undefined) {
-      payload.category = updates.category.trim() || DEFAULT_CATEGORY;
+      payload.category = updates.category.trim() || DEFAULT_SECTION_TITLE;
     }
     if (updates.order !== undefined) payload.sort_order = updates.order;
     if (updates.isVisible !== undefined) payload.is_published = updates.isVisible;
+    if (updates.isFeatured !== undefined) payload.is_featured = updates.isFeatured;
 
     const { error } = await supabase
       .from("academy_videos")
       .update(payload)
       .eq("id", videoId);
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
+    if (error) throw new Error(error.message);
     await refreshAcademyData();
   };
 
   const deleteVideo = async (videoId: string) => {
     const supabase = getSupabaseClient();
 
-    if (!supabase) {
-      throw new Error("Supabase is not configured.");
-    }
+    if (!supabase) throw new Error("Supabase is not configured.");
 
     const { error } = await supabase.from("academy_videos").delete().eq("id", videoId);
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
+    if (error) throw new Error(error.message);
     await refreshAcademyData();
   };
 
   const moveVideo = async (videoId: string, direction: "up" | "down") => {
     const video = videos.find((item) => item.id === videoId);
 
-    if (!video) {
-      return;
-    }
+    if (!video) return;
 
-    const nextOrder = direction === "up" ? video.order - 1 : video.order + 1;
-    await updateVideo(videoId, { order: Math.max(0, nextOrder) });
+    await updateVideo(videoId, {
+      order: Math.max(0, video.order + (direction === "up" ? -1 : 1))
+    });
+  };
+
+  const moveVideoToSection = async (videoId: string, sectionId: string) => {
+    const section = sections.find((item) => item.id === sectionId);
+
+    await updateVideo(videoId, {
+      sectionId,
+      category: section?.title ?? DEFAULT_SECTION_TITLE
+    });
+  };
+
+  const setVideoFeatured = async (videoId: string) => {
+    const video = videos.find((item) => item.id === videoId);
+
+    if (!video) return;
+
+    await updateVideo(videoId, { isFeatured: !video.isFeatured });
   };
 
   const toggleVideoVisibility = async (videoId: string) => {
     const video = videos.find((item) => item.id === videoId);
 
-    if (video) {
-      await updateVideo(videoId, { isVisible: !video.isVisible });
-    }
+    if (video) await updateVideo(videoId, { isVisible: !video.isVisible });
   };
 
   const addComment = async (videoId: string, commentText: string) => {
     const supabase = getSupabaseClient();
 
-    if (!supabase || !currentUser || !commentText.trim()) {
-      return;
-    }
+    if (!supabase || !currentUser || !commentText.trim()) return;
 
     const { error } = await supabase.from("video_comments").insert({
       video_id: videoId,
@@ -712,9 +848,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
   const deleteComment = async (commentId: string) => {
     const supabase = getSupabaseClient();
 
-    if (!supabase) {
-      return;
-    }
+    if (!supabase) return;
 
     const { error } = await supabase.from("video_comments").delete().eq("id", commentId);
 
@@ -729,9 +863,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
   const incrementVideoView = async (videoId: string, progressSeconds = 0) => {
     const supabase = getSupabaseClient();
 
-    if (!supabase || !currentUser) {
-      return;
-    }
+    if (!supabase || !currentUser) return;
 
     await supabase.from("video_progress").upsert(
       {
@@ -784,19 +916,16 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       registerVisitor,
       requestPasswordReset,
       logout,
-      createSection: () => undefined,
-      updateSection: () => undefined,
-      deleteSection: () => undefined,
-      moveSection: () => undefined,
+      createSection,
+      updateSection,
+      deleteSection,
+      moveSection,
       createVideo,
       updateVideo,
       deleteVideo,
       moveVideo,
-      moveVideoToSection: async (videoId, sectionId) => {
-        const section = sections.find((item) => item.id === sectionId);
-        if (section) await updateVideo(videoId, { category: section.title });
-      },
-      setVideoFeatured: async () => undefined,
+      moveVideoToSection,
+      setVideoFeatured,
       toggleVideoVisibility,
       addComment,
       deleteOwnComment: deleteComment,

@@ -75,30 +75,35 @@ Optional update/delete protection can be added later if review editing is introd
 
 ## Academy Backend Schema
 
-Run the Academy migration in Supabase SQL Editor:
+Run these Academy migrations in Supabase SQL Editor in this order:
 
 ```text
 supabase/migrations/20260610_academy_backend.sql
+supabase/migrations/20260610_fix_academy_admin_rls.sql
 ```
 
-This creates:
+These create and update:
 
 - `profiles`
+- `academy_sections`
 - `academy_videos`
 - `video_comments`
 - `video_progress`
 
-It also enables Row Level Security and policies for:
+They also enable Row Level Security and policies for:
 
+- Published section reads.
 - Published academy video reads.
 - Admin-only video create/update/delete.
+- Admin-only section create/update/delete.
 - Authenticated student comments.
 - Own-progress tracking for students.
 - Admin visibility across comments/progress.
+- One featured video at a time.
 
 Videos are stored as external URLs only. Use YouTube unlisted, Vimeo, TikTok, Instagram, or other public embeddable links. Do not upload large video files to the Next.js project or GitHub repo.
 
-For Academy admin access, set the Supabase user's `app_metadata.role` to `admin` and make their `profiles.role` admin.
+For Academy admin access, make sure the Supabase user has a matching `profiles` row with `role = 'admin'`. The frontend also accepts `app_metadata.role === "admin"` for compatibility, but the database RLS policies use `profiles.role`.
 Student accounts created from the website are assigned `role: "student"`.
 
 ## Admin User
@@ -114,12 +119,13 @@ To create an admin from the dashboard:
 5. Run this SQL, replacing the email and name if needed:
 
 ```sql
+-- Replace this email/name with the real admin user.
 update auth.users
 set
   raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
     || '{"role": "admin"}'::jsonb,
   raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb)
-    || '{"name": "Admin User"}'::jsonb
+    || '{"name": "Admin User", "full_name": "Admin User"}'::jsonb
 where email = 'ricoajlewis@gmail.com';
 
 insert into public.profiles (id, full_name, role)
@@ -130,6 +136,21 @@ on conflict (id) do update
 set full_name = excluded.full_name,
     role = 'admin';
 ```
+
+Confirm the admin profile exists:
+
+```sql
+select
+  u.email,
+  p.id,
+  p.full_name,
+  p.role
+from auth.users u
+left join public.profiles p on p.id = u.id
+where u.email = 'ricoajlewis@gmail.com';
+```
+
+The result must show `role` as `admin`. If it shows `student` or `null`, the Academy Admin page will not be allowed to insert videos because RLS will block it.
 
 The user's Raw JSON should then include:
 
@@ -149,19 +170,67 @@ The user's Raw JSON should then include:
 
 The frontend reads the `profiles.role` and also accepts `app_metadata.role === "admin"` for compatibility. If the role is missing, the user is treated as a normal student.
 
+## RLS Insert Troubleshooting
+
+If the admin page shows:
+
+```text
+new row violates row-level security policy for table academy_videos
+```
+
+Check these items:
+
+1. The `20260610_fix_academy_admin_rls.sql` migration has been run successfully.
+2. The logged-in user exists in `public.profiles`.
+3. The logged-in user's `public.profiles.role` is exactly `admin`.
+4. The browser is logged into the same email that was promoted to admin.
+5. The video is being added from `/academy/admin` using an external video URL, not a local file path.
+
+The important policy is:
+
+```sql
+create policy "Admins can insert academy videos"
+on public.academy_videos
+for insert
+to authenticated
+with check (
+  public.is_admin()
+  and (created_by is null or created_by = auth.uid())
+);
+```
+
+`public.is_admin()` checks `public.profiles.role = 'admin'` for the currently logged-in Supabase user. Do not disable RLS to fix this error.
+
 ## Adding the First Academy Video
 
 1. Log in with the admin user.
 2. Open `/academy/admin`.
-3. Go to `Videos`.
-4. Add:
+3. Go to `Sections` and create at least one section, such as `Beginner Lessons`.
+4. Go to `Videos / Playlists`.
+5. Use `Add External Video`.
+6. Add:
    - Title
    - Description
-   - External video URL
+   - External video URL or embed URL
    - Optional thumbnail URL
+   - Section
    - Category
    - Sort order
    - Published status
-5. Save the video.
+   - Featured status if this should be the featured tutorial
+7. Save the video link.
 
-Published videos appear in `/academy` and `/academy/dashboard`. Unpublished videos remain admin-only.
+Published videos appear in `/academy` and `/academy/dashboard`. Unpublished videos remain admin-only. Only one video can be featured at a time.
+
+## Testing the First Admin Insert
+
+After running the migrations and promoting the admin:
+
+1. Log out of the site.
+2. Log back in with the promoted admin email.
+3. Open `/academy/admin`.
+4. Create a section if none exists.
+5. Add an external test video URL, for example a YouTube unlisted or public embed URL.
+6. Confirm that the success message appears and the video record shows in the admin list.
+
+If the insert fails, run the admin profile confirmation query above and verify the current browser user is the same email.
