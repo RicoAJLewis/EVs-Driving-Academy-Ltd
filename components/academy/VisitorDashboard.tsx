@@ -43,7 +43,7 @@ export function VisitorDashboard() {
     : "";
 
   return (
-    <AcademyProtected allowedRoles={["visitor"]}>
+    <AcademyProtected allowedRoles={["student", "visitor"]}>
       <AcademyPageLayout
         eyebrow="Visitor Dashboard"
         title="EV Academy"

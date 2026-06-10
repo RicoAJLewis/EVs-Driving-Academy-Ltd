@@ -114,14 +114,14 @@ export function AcademyLogin() {
               ? "Welcome back"
               : mode === "reset"
                 ? "Reset your password"
-                : "Create a visitor account"}
+                : "Create a student account"}
           </strong>
           <span style={{ color: "rgba(239,246,255,0.72)", lineHeight: 1.7 }}>
             {mode === "login"
               ? "Sign in to manage your learning space, continue watching tutorials, and stay connected with EV Academy."
               : mode === "reset"
                 ? "Enter your email address and we will send a secure password reset link."
-                : "Create your visitor account to save your place, join the Academy, and take part in the learning experience."}
+                : "Create your student account to save your place, join the Academy, and take part in the learning experience."}
           </span>
         </div>
 
@@ -280,7 +280,7 @@ export function AcademyLogin() {
               fontWeight: 700
             }}
           >
-            {mode === "register" ? "Back to login" : "Create visitor account"}
+            {mode === "register" ? "Back to login" : "Create student account"}
           </button>
 
           <button

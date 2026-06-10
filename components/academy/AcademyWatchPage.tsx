@@ -58,21 +58,21 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
     setHasCountedView(true);
   }, [hasCountedView, incrementVideoView, video]);
 
-  const handleSubmitComment = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmitComment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!currentUser || !commentText.trim()) {
       return;
     }
 
-    addComment(videoId, commentText);
+    await addComment(videoId, commentText);
     setCommentText("");
   };
 
   const backHref =
     currentUser?.role === "admin"
       ? "/academy/admin"
-      : currentUser?.role === "visitor"
+      : currentUser?.role === "student" || currentUser?.role === "visitor"
         ? "/academy/dashboard"
         : "/academy";
 

@@ -20,7 +20,7 @@ function getHeaderUser(user: User): HeaderUser {
   const role =
     user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
       ? "admin"
-      : "visitor";
+      : "student";
   const name =
     typeof user.user_metadata?.name === "string"
       ? user.user_metadata.name

@@ -82,7 +82,7 @@ function getRoleFromSessionUser(user: {
 }) {
   return user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
     ? "admin"
-    : "visitor";
+    : "student";
 }
 
 function toSiteReview(row: SupabaseReviewRow): SiteReview {

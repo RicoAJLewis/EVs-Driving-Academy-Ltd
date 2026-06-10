@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "visitor";
+export type UserRole = "admin" | "student" | "visitor";
 
 export type AcademyUser = {
   id: string;
@@ -54,4 +54,13 @@ export type AcademyAnalytics = {
   topPerformingSection: AcademySection | null;
   viewsPerVideo: AcademyVideo[];
   recentComments: Array<AcademyComment & { videoTitle: string }>;
+};
+
+export type AcademyProgress = {
+  id: string;
+  userId: string;
+  videoId: string;
+  watched: boolean;
+  watchedAt?: string;
+  progressSeconds: number;
 };

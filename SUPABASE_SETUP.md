@@ -73,8 +73,33 @@ with check (auth.uid() = user_id);
 
 Optional update/delete protection can be added later if review editing is introduced.
 
-For Academy admin access, set the Supabase user's `app_metadata.role` to `admin`.
-Visitor accounts created from the website are assigned `role: "visitor"`.
+## Academy Backend Schema
+
+Run the Academy migration in Supabase SQL Editor:
+
+```text
+supabase/migrations/20260610_academy_backend.sql
+```
+
+This creates:
+
+- `profiles`
+- `academy_videos`
+- `video_comments`
+- `video_progress`
+
+It also enables Row Level Security and policies for:
+
+- Published academy video reads.
+- Admin-only video create/update/delete.
+- Authenticated student comments.
+- Own-progress tracking for students.
+- Admin visibility across comments/progress.
+
+Videos are stored as external URLs only. Use YouTube unlisted, Vimeo, TikTok, Instagram, or other public embeddable links. Do not upload large video files to the Next.js project or GitHub repo.
+
+For Academy admin access, set the Supabase user's `app_metadata.role` to `admin` and make their `profiles.role` admin.
+Student accounts created from the website are assigned `role: "student"`.
 
 ## Admin User
 
@@ -96,6 +121,14 @@ set
   raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb)
     || '{"name": "Admin User"}'::jsonb
 where email = 'ricoajlewis@gmail.com';
+
+insert into public.profiles (id, full_name, role)
+select id, 'Admin User', 'admin'
+from auth.users
+where email = 'ricoajlewis@gmail.com'
+on conflict (id) do update
+set full_name = excluded.full_name,
+    role = 'admin';
 ```
 
 The user's Raw JSON should then include:
@@ -114,5 +147,21 @@ The user's Raw JSON should then include:
 }
 ```
 
-The frontend reads `app_metadata.role === "admin"` to allow access to `/academy/admin`.
-If the role is missing, the user is treated as a normal visitor.
+The frontend reads the `profiles.role` and also accepts `app_metadata.role === "admin"` for compatibility. If the role is missing, the user is treated as a normal student.
+
+## Adding the First Academy Video
+
+1. Log in with the admin user.
+2. Open `/academy/admin`.
+3. Go to `Videos`.
+4. Add:
+   - Title
+   - Description
+   - External video URL
+   - Optional thumbnail URL
+   - Category
+   - Sort order
+   - Published status
+5. Save the video.
+
+Published videos appear in `/academy` and `/academy/dashboard`. Unpublished videos remain admin-only.
