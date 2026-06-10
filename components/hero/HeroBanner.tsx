@@ -5,6 +5,7 @@ import { useBannerPhase } from "@/hooks/useBannerPhase";
 import { useCursorParallax } from "@/hooks/useCursorParallax";
 import { CursorGlow } from "./CursorGlow";
 import { HeroContent } from "./HeroContent";
+import { HeroAuthLink } from "./HeroAuthLink";
 import { HeroImageLayers } from "./HeroImageLayers";
 import { HeroLocationLink } from "./HeroLocationLink";
 import { HeroMenu } from "./HeroMenu";
@@ -44,11 +45,14 @@ export function HeroBanner({ locationUrl }: HeroBannerProps) {
       <HeroMenu
         reducedMotion={reducedMotion}
         rightContent={
-          <HeroLocationLink
-            href={locationUrl}
-            reducedMotion={reducedMotion}
-            inline
-          />
+          <>
+            <HeroAuthLink reducedMotion={reducedMotion} />
+            <HeroLocationLink
+              href={locationUrl}
+              reducedMotion={reducedMotion}
+              inline
+            />
+          </>
         }
       />
       <HeroImageLayers

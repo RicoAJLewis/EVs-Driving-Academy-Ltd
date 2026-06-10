@@ -11,16 +11,20 @@ import {
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademyUser } from "@/types/academy";
 
-type ReviewFilter = "All Reviews" | ReviewSource;
+const ALL_REVIEWS_FILTER = "All Reviews";
+const WEBSITE_REVIEW_SOURCE = "EVs Driving Academy Ltd";
+const SETMORE_REVIEW_SOURCE = "Setmore";
+
+type ReviewFilter = typeof ALL_REVIEWS_FILTER | ReviewSource;
 
 type ReviewsSectionProps = {
   setmoreReviews: SiteReview[];
 };
 
 const filterOptions: ReviewFilter[] = [
-  "All Reviews",
-  "EVs Driving Academy Ltd",
-  "Setmore"
+  ALL_REVIEWS_FILTER,
+  WEBSITE_REVIEW_SOURCE,
+  SETMORE_REVIEW_SOURCE
 ];
 
 const containerVariants = {
@@ -87,7 +91,7 @@ function toSiteReview(row: SupabaseReviewRow): SiteReview {
     name: row.reviewer_name?.trim() || "EV Academy Student",
     rating: Math.min(Math.max(row.rating ?? 5, 1), 5),
     comment: row.comment?.trim() || "",
-    source: "EVs Driving Academy Ltd",
+    source: WEBSITE_REVIEW_SOURCE,
     date: row.created_at
       ? new Date(row.created_at).toLocaleDateString(undefined, {
           month: "short",
@@ -95,6 +99,30 @@ function toSiteReview(row: SupabaseReviewRow): SiteReview {
           year: "numeric"
         })
       : undefined
+  };
+}
+
+function normalizeReviewSource(source: unknown): ReviewSource {
+  if (typeof source !== "string") {
+    return WEBSITE_REVIEW_SOURCE;
+  }
+
+  const normalizedSource = source.trim().toLowerCase();
+
+  if (normalizedSource.includes("setmore")) {
+    return SETMORE_REVIEW_SOURCE;
+  }
+
+  return WEBSITE_REVIEW_SOURCE;
+}
+
+function normalizeSiteReview(review: SiteReview): SiteReview {
+  return {
+    ...review,
+    name: review.name?.trim() || "EV Academy Student",
+    rating: Math.min(Math.max(Number(review.rating) || 5, 1), 5),
+    comment: review.comment?.trim() || "",
+    source: normalizeReviewSource(review.source)
   };
 }
 
@@ -151,10 +179,18 @@ function Stars({
   );
 }
 
-function ReviewCard({ review }: { review: SiteReview }) {
+function ReviewCard({
+  review,
+  reducedMotion
+}: {
+  review: SiteReview;
+  reducedMotion: boolean;
+}) {
   return (
     <motion.article
-      variants={itemVariants}
+      initial={reducedMotion ? false : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reducedMotion ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
       className="review-card"
       style={{
         position: "relative",
@@ -254,19 +290,18 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
   const reducedMotion = useReducedMotion() ?? false;
   const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
   const [websiteReviews, setWebsiteReviews] = useState<SiteReview[]>([]);
-  const [activeFilter, setActiveFilter] = useState<ReviewFilter>("All Reviews");
+  const [activeFilter, setActiveFilter] =
+    useState<ReviewFilter>(ALL_REVIEWS_FILTER);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     const supabase = getSupabaseClient();
 
     if (!supabase) {
-      setIsSupabaseConfigured(false);
       return;
     }
 
@@ -331,17 +366,28 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     };
   }, []);
 
-  const allReviews = useMemo(
-    () => [...websiteReviews, ...setmoreReviews],
-    [setmoreReviews, websiteReviews]
+  const normalizedSetmoreReviews = useMemo(
+    () => setmoreReviews.map(normalizeSiteReview),
+    [setmoreReviews]
   );
 
+  const allReviews = useMemo(() => {
+    return [...websiteReviews.map(normalizeSiteReview), ...normalizedSetmoreReviews];
+  }, [normalizedSetmoreReviews, websiteReviews]);
+
   const filteredReviews = useMemo(() => {
-    if (activeFilter === "All Reviews") {
+    const normalizedFilter =
+      activeFilter === ALL_REVIEWS_FILTER
+        ? ALL_REVIEWS_FILTER
+        : normalizeReviewSource(activeFilter);
+
+    if (normalizedFilter === ALL_REVIEWS_FILTER) {
       return allReviews;
     }
 
-    return allReviews.filter((review) => review.source === activeFilter);
+    return allReviews.filter(
+      (review) => normalizeReviewSource(review.source) === normalizedFilter
+    );
   }, [activeFilter, allReviews]);
 
   const averageRating =
@@ -378,7 +424,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
         reviewer_name: currentUser.name,
         rating,
         comment: comment.trim(),
-        source: "EVs Driving Academy Ltd"
+        source: WEBSITE_REVIEW_SOURCE
       })
       .select("id, reviewer_name, rating, comment, source, created_at")
       .single();
@@ -392,7 +438,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     setWebsiteReviews((reviews) => [toSiteReview(data), ...reviews]);
     setComment("");
     setRating(5);
-    setActiveFilter("All Reviews");
+    setActiveFilter(ALL_REVIEWS_FILTER);
     setStatusMessage("Thank you. Your review has been added.");
   };
 
@@ -529,18 +575,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
               Share your experience
             </h3>
 
-            {!isSupabaseConfigured ? (
-              <p
-                style={{
-                  margin: 0,
-                  color: "rgba(239,246,255,0.75)",
-                  lineHeight: 1.75
-                }}
-              >
-                Review submissions will be available once Supabase environment
-                variables are configured.
-              </p>
-            ) : currentUser ? (
+            {currentUser ? (
               <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem" }}>
                 <div style={{ display: "grid", gap: "0.5rem" }}>
                   <span style={{ color: "rgba(239,246,255,0.78)", fontWeight: 700 }}>
@@ -607,7 +642,11 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
           >
             {filteredReviews.length > 0 ? (
               filteredReviews.map((review) => (
-                <ReviewCard key={review.id} review={review} />
+                <ReviewCard
+                  key={`${review.source}-${review.id}`}
+                  review={review}
+                  reducedMotion={reducedMotion}
+                />
               ))
             ) : (
               <p

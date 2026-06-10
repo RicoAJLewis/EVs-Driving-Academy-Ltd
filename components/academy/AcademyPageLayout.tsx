@@ -17,7 +17,6 @@ type AcademyPageLayoutProps = {
 };
 
 export function AcademyPageLayout({
-  eyebrow,
   title,
   subtitle,
   actions,
@@ -92,26 +91,6 @@ export function AcademyPageLayout({
               gap: "1rem"
             }}
           >
-            {eyebrow ? (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  width: "fit-content",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  borderRadius: "999px",
-                  padding: "0.45rem 0.85rem",
-                  fontSize: "0.8rem",
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "rgba(239,246,255,0.78)",
-                  background: "rgba(255,255,255,0.04)"
-                }}
-              >
-                {eyebrow}
-              </span>
-            ) : null}
-
             <h1
               style={{
                 margin: 0,

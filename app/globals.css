@@ -503,6 +503,55 @@ img {
   border-color: rgba(246, 193, 91, 0.34) !important;
 }
 
+.hero-auth-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hero-auth-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.55rem;
+  border: 1px solid rgba(8, 17, 29, 0.1);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.68);
+  color: #08111d;
+  padding: 0.55rem 0.8rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.hero-auth-link:hover,
+.hero-auth-link:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(8, 17, 29, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  outline: none;
+}
+
+.hero-auth-link-placeholder {
+  width: 4.2rem;
+  visibility: hidden;
+}
+
+.hero-auth-profile-label {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hero-location-label {
   display: inline-flex;
 }
@@ -519,6 +568,10 @@ img {
 
 .academy-hero-actions {
   width: 100%;
+}
+
+.academy-hero-inner {
+  padding-top: clamp(10.75rem, 13vw, 12.5rem) !important;
 }
 
 .site-footer-brand {
@@ -563,6 +616,7 @@ img {
   .hero-primary-header-right {
     width: 100%;
     justify-content: center !important;
+    flex-wrap: wrap;
   }
 
   .hero-primary-nav-links {
@@ -580,7 +634,7 @@ img {
   }
 
   .academy-hero-shell {
-    padding-top: 4.6rem;
+    padding-top: 0;
   }
 
   .academy-top-right {
@@ -604,7 +658,7 @@ img {
 
   .academy-hero-inner {
     width: min(1180px, calc(100% - 1.25rem)) !important;
-    padding: 2rem 0 2.4rem !important;
+    padding: 15.5rem 0 2.4rem !important;
   }
 
   .academy-hero-copy {
@@ -685,6 +739,16 @@ img {
     display: none;
   }
 
+  .hero-auth-link {
+    min-height: 2.45rem;
+    padding: 0.55rem 0.72rem;
+    font-size: 0.86rem;
+  }
+
+  .hero-auth-profile-label {
+    max-width: 8rem;
+  }
+
   .academy-video-grid,
   .academy-featured-grid,
   .academy-admin-stats,
@@ -730,6 +794,10 @@ img {
 
   .academy-top-right {
     width: calc(100% - 1rem);
+  }
+
+  .academy-hero-inner {
+    padding-top: 20.5rem !important;
   }
 
   .academy-top-right-control {

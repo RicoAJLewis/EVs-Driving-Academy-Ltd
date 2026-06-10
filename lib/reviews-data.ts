@@ -10,7 +10,8 @@ export type SiteReview = {
 };
 
 // Setmore does not expose a stable browser-safe reviews API here, so these
-// public Setmore reviews are maintained manually until backend sync is added.
+// public reviews from https://evsdrivingacademy.setmore.com/reviews?sortBy=highestRated
+// are maintained manually until backend sync is added.
 export const setmoreReviews: SiteReview[] = [
   {
     id: "setmore-roselle-gregoire",

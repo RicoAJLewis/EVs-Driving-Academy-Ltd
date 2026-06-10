@@ -258,7 +258,8 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "flex-end"
+              justifyContent: "flex-end",
+              gap: "0.5rem"
             }}
           >
             {rightContent}
