@@ -9,13 +9,15 @@ import {
   useState,
   type ReactNode
 } from "react";
-import type { User } from "@supabase/supabase-js";
+import type { PostgrestError, User } from "@supabase/supabase-js";
 import {
   normalizeAcademyThumbnailUrl,
   normalizeAcademyVideoUrl
 } from "@/lib/academy-media";
-import { getSupabaseClient } from "@/lib/supabaseClient";
+import { getSupabaseClient, getSupabaseConfigStatus } from "@/lib/supabaseClient";
 import type {
+  AcademyAdminActionError,
+  AcademyAdminDebugInfo,
   AcademyAnalytics,
   AcademyComment,
   AcademyProgress,
@@ -43,6 +45,8 @@ type AcademyContextValue = {
   isReady: boolean;
   errorMessage: string;
   currentUser: AcademyUser | null;
+  adminDebugInfo: AcademyAdminDebugInfo | null;
+  lastAdminActionError: AcademyAdminActionError | null;
   sections: AcademySection[];
   videos: AcademyVideo[];
   comments: AcademyComment[];
@@ -60,6 +64,8 @@ type AcademyContextValue = {
   ) => Promise<RegisterResult>;
   requestPasswordReset: (email: string, redirectTo: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
+  refreshAdminDebugInfo: () => Promise<AcademyAdminDebugInfo>;
+  testAdminSectionInsert: () => Promise<void>;
   createSection: (title: string, description: string) => Promise<void>;
   updateSection: (
     sectionId: string,
@@ -188,7 +194,8 @@ function toAcademyUserFromSupabase(user: User, profile?: ProfileRow | null): Aca
     id: user.id,
     name: getDisplayNameFromUser(user, profile),
     email: user.email ?? "",
-    role: getRoleFromUser(user, profile)
+    role: getRoleFromUser(user, profile),
+    profileRole: profile?.role ?? null
   };
 }
 
@@ -199,6 +206,63 @@ function isValidExternalVideoUrl(videoUrl: string) {
   } catch {
     return false;
   }
+}
+
+function getUnknownErrorField(error: unknown, field: keyof PostgrestError) {
+  if (error && typeof error === "object" && field in error) {
+    const value = (error as Record<string, unknown>)[field];
+    return typeof value === "string" ? value : undefined;
+  }
+
+  return undefined;
+}
+
+function createAdminActionError({
+  table,
+  action,
+  payload,
+  error,
+  debugInfo
+}: {
+  table: string;
+  action: string;
+  payload: Record<string, unknown> | null;
+  error: unknown;
+  debugInfo: AcademyAdminDebugInfo;
+}): AcademyAdminActionError {
+  const fallbackMessage =
+    error instanceof Error ? error.message : "Supabase admin action failed.";
+
+  return {
+    table,
+    action,
+    payload,
+    message: getUnknownErrorField(error, "message") ?? fallbackMessage,
+    code: getUnknownErrorField(error, "code"),
+    details: getUnknownErrorField(error, "details"),
+    hint: getUnknownErrorField(error, "hint"),
+    userId: debugInfo.userId,
+    userEmail: debugInfo.userEmail,
+    profileRole: debugInfo.profileRole,
+    checkedAt: new Date().toISOString()
+  };
+}
+
+function formatAdminActionError(error: AcademyAdminActionError) {
+  const lines = [
+    `${error.message}`,
+    `Table: ${error.table}`,
+    `Action: ${error.action}`,
+    `User: ${error.userEmail ?? "not loaded"} (${error.userId ?? "no user id"})`,
+    `Profile role: ${error.profileRole ?? "not loaded"}`,
+    `Payload: ${JSON.stringify(error.payload)}`
+  ];
+
+  if (error.code) lines.push(`Code: ${error.code}`);
+  if (error.details) lines.push(`Details: ${error.details}`);
+  if (error.hint) lines.push(`Hint: ${error.hint}`);
+
+  return lines.join("\n");
 }
 
 function toAcademySection(row: SectionRow): AcademySection {
@@ -260,6 +324,10 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
+  const [adminDebugInfo, setAdminDebugInfo] =
+    useState<AcademyAdminDebugInfo | null>(null);
+  const [lastAdminActionError, setLastAdminActionError] =
+    useState<AcademyAdminActionError | null>(null);
   const [sections, setSections] = useState<AcademySection[]>([]);
   const [videos, setVideos] = useState<AcademyVideo[]>([]);
   const [comments, setComments] = useState<AcademyComment[]>([]);
@@ -288,6 +356,79 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const academyUser = toAcademyUserFromSupabase(user, profile);
     setCurrentUser(academyUser);
     return academyUser;
+  }, []);
+
+  const refreshAdminDebugInfo = useCallback(async () => {
+    const configStatus = getSupabaseConfigStatus();
+    const supabase = getSupabaseClient();
+    const now = new Date().toISOString();
+
+    if (!supabase) {
+      const info: AcademyAdminDebugInfo = {
+        ...configStatus,
+        sessionExists: false,
+        userId: null,
+        userEmail: null,
+        profileId: null,
+        profileRole: null,
+        appMetadataRole: null,
+        userMetadataRole: null,
+        profileMatchesSession: false,
+        isAdminRpc: null,
+        isAdminRpcError: "Supabase client is not configured.",
+        checkedAt: now
+      };
+      setAdminDebugInfo(info);
+      return info;
+    }
+
+    const [{ data: sessionData }, { data: userData, error: userError }] =
+      await Promise.all([supabase.auth.getSession(), supabase.auth.getUser()]);
+    const user = userData.user ?? sessionData.session?.user ?? null;
+    let profile: ProfileRow | null = null;
+    let profileError: string | null = null;
+    let isAdminRpc: boolean | null = null;
+    let isAdminRpcError: string | null = null;
+
+    if (user) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      profile = (data as ProfileRow | null) ?? null;
+      profileError = error?.message ?? null;
+
+      const rpcResult = await supabase.rpc("is_admin");
+      isAdminRpc =
+        typeof rpcResult.data === "boolean" ? rpcResult.data : null;
+      isAdminRpcError = rpcResult.error?.message ?? null;
+    }
+
+    const info: AcademyAdminDebugInfo = {
+      ...configStatus,
+      sessionExists: Boolean(sessionData.session),
+      userId: user?.id ?? null,
+      userEmail: user?.email ?? null,
+      profileId: profile?.id ?? null,
+      profileRole: profile?.role ?? null,
+      appMetadataRole:
+        typeof user?.app_metadata?.role === "string"
+          ? user.app_metadata.role
+          : null,
+      userMetadataRole:
+        typeof user?.user_metadata?.role === "string"
+          ? user.user_metadata.role
+          : null,
+      profileMatchesSession: Boolean(profile?.id && user?.id && profile.id === user.id),
+      isAdminRpc,
+      isAdminRpcError: userError?.message ?? profileError ?? isAdminRpcError,
+      checkedAt: now
+    };
+
+    setAdminDebugInfo(info);
+    return info;
   }, []);
 
   const refreshAcademyData = useCallback(async () => {
@@ -443,6 +584,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       }
 
       await loadCurrentUser(data.session?.user ?? null);
+      await refreshAdminDebugInfo();
       await refreshAcademyData();
     };
 
@@ -453,14 +595,17 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      void loadCurrentUser(session?.user ?? null).then(() => refreshAcademyData());
+      void loadCurrentUser(session?.user ?? null).then(async () => {
+        await refreshAdminDebugInfo();
+        await refreshAcademyData();
+      });
     });
 
     return () => {
       isMounted = false;
       authSubscription?.data.subscription.unsubscribe();
     };
-  }, [loadCurrentUser, refreshAcademyData]);
+  }, [loadCurrentUser, refreshAcademyData, refreshAdminDebugInfo]);
 
   const computedVideos = useMemo(
     () =>
@@ -648,19 +793,118 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     await refreshAcademyData();
   };
 
+  const ensureAdminSession = async () => {
+    const debugInfo = await refreshAdminDebugInfo();
+
+    if (!debugInfo.sessionExists || !debugInfo.userId) {
+      throw new Error("Admin session not loaded. Please log out and log back in.");
+    }
+
+    if (debugInfo.profileRole !== "admin" || debugInfo.isAdminRpc !== true) {
+      throw new Error(
+        [
+          "Admin permissions are not active for this session.",
+          `User: ${debugInfo.userEmail ?? "unknown"} (${debugInfo.userId})`,
+          `Profile id: ${debugInfo.profileId ?? "not found"}`,
+          `Profile role: ${debugInfo.profileRole ?? "not found"}`,
+          `App metadata role: ${debugInfo.appMetadataRole ?? "not set"}`,
+          `User metadata role: ${debugInfo.userMetadataRole ?? "not set"}`,
+          `public.is_admin(): ${String(debugInfo.isAdminRpc)}`,
+          "Please confirm public.profiles.id matches this user id and role is admin, then log out and log back in."
+        ].join("\n")
+      );
+    }
+
+    return debugInfo;
+  };
+
+  const throwAdminMutationError = ({
+    table,
+    action,
+    payload,
+    error,
+    debugInfo
+  }: {
+    table: string;
+    action: string;
+    payload: Record<string, unknown> | null;
+    error: unknown;
+    debugInfo: AcademyAdminDebugInfo;
+  }) => {
+    const actionError = createAdminActionError({
+      table,
+      action,
+      payload,
+      error,
+      debugInfo
+    });
+
+    setLastAdminActionError(actionError);
+    console.error("EV Academy Supabase admin action failed", actionError);
+    throw new Error(formatAdminActionError(actionError));
+  };
+
+  const testAdminSectionInsert = async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const debugInfo = await ensureAdminSession();
+    const payload = {
+      title: `Debug test section ${new Date().toISOString()}`,
+      description: "Temporary RLS test section. Safe to delete.",
+      sort_order: 9999,
+      is_published: false
+    };
+    const { data, error } = await supabase
+      .from("academy_sections")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_sections",
+        action: "debug insert",
+        payload,
+        error,
+        debugInfo
+      });
+    }
+
+    if (data?.id) {
+      await supabase.from("academy_sections").delete().eq("id", data.id);
+    }
+
+    setLastAdminActionError(null);
+    await refreshAdminDebugInfo();
+  };
+
   const createSection = async (title: string, description: string) => {
     const supabase = getSupabaseClient();
 
     if (!supabase) throw new Error("Supabase is not configured.");
 
-    const { error } = await supabase.from("academy_sections").insert({
+    const debugInfo = await ensureAdminSession();
+    const payload = {
       title: title.trim(),
       description: description.trim(),
       sort_order: sections.length + 1,
       is_published: true
-    });
+    };
+    const { error } = await supabase.from("academy_sections").insert(payload);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_sections",
+        action: "insert",
+        payload,
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -671,6 +915,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) throw new Error("Supabase is not configured.");
+    const debugInfo = await ensureAdminSession();
 
     const payload: Record<string, string | number | boolean | null> = {};
     if (updates.title !== undefined) payload.title = updates.title.trim();
@@ -685,7 +930,17 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       .update(payload)
       .eq("id", sectionId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_sections",
+        action: "update",
+        payload: { id: sectionId, ...payload },
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -693,13 +948,24 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) throw new Error("Supabase is not configured.");
+    const debugInfo = await ensureAdminSession();
 
     const { error } = await supabase
       .from("academy_sections")
       .delete()
       .eq("id", sectionId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_sections",
+        action: "delete",
+        payload: { id: sectionId },
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -724,9 +990,10 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       throw new Error("Please enter a valid YouTube, Vimeo, TikTok, or Instagram URL.");
     }
 
+    const debugInfo = await ensureAdminSession();
     const section = sections.find((item) => item.id === input.sectionId);
 
-    const { error } = await supabase.from("academy_videos").insert({
+    const payload = {
       section_id: section?.id ?? null,
       title: input.title.trim(),
       description: input.description.trim(),
@@ -739,9 +1006,20 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       is_published: input.isVisible,
       is_featured: input.isFeatured,
       created_by: currentUser.id
-    });
+    };
+    const { error } = await supabase.from("academy_videos").insert(payload);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_videos",
+        action: "insert",
+        payload,
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -749,6 +1027,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) throw new Error("Supabase is not configured.");
+    const debugInfo = await ensureAdminSession();
 
     const payload: Record<string, string | number | boolean | null> = {};
 
@@ -778,7 +1057,17 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       .update(payload)
       .eq("id", videoId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_videos",
+        action: "update",
+        payload: { id: videoId, ...payload },
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -786,10 +1075,21 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) throw new Error("Supabase is not configured.");
+    const debugInfo = await ensureAdminSession();
 
     const { error } = await supabase.from("academy_videos").delete().eq("id", videoId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throwAdminMutationError({
+        table: "academy_videos",
+        action: "delete",
+        payload: { id: videoId },
+        error,
+        debugInfo
+      });
+    }
+
+    setLastAdminActionError(null);
     await refreshAcademyData();
   };
 
@@ -849,10 +1149,21 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) return;
+    const debugInfo = currentUser?.role === "admin" ? await ensureAdminSession() : null;
 
     const { error } = await supabase.from("video_comments").delete().eq("id", commentId);
 
     if (error) {
+      if (debugInfo) {
+        throwAdminMutationError({
+          table: "video_comments",
+          action: "delete",
+          payload: { id: commentId },
+          error,
+          debugInfo
+        });
+      }
+
       setErrorMessage(error.message);
       return;
     }
@@ -903,6 +1214,8 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       isReady,
       errorMessage,
       currentUser,
+      adminDebugInfo,
+      lastAdminActionError,
       sections,
       videos: computedVideos,
       comments,
@@ -916,6 +1229,8 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       registerVisitor,
       requestPasswordReset,
       logout,
+      refreshAdminDebugInfo,
+      testAdminSectionInsert,
       createSection,
       updateSection,
       deleteSection,
@@ -938,6 +1253,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       getCommentsForVideo
     }),
     [
+      adminDebugInfo,
       analytics,
       comments,
       computedVideos,
@@ -949,8 +1265,10 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       getVideoById,
       getVideosForSection,
       isReady,
+      lastAdminActionError,
       progress,
       refreshAcademyData,
+      refreshAdminDebugInfo,
       sections,
       visibleSections,
       visibleVideos

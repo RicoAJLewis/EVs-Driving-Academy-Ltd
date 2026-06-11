@@ -20,6 +20,8 @@ https://evs-driving-academy-ltd.vercel.app/**
 http://localhost:3000/**
 ```
 
+Make sure the URLs are entered without spaces and include the `/**` wildcard for both production and local development.
+
 Password reset emails should redirect to:
 
 ```text
@@ -80,6 +82,7 @@ Run these Academy migrations in Supabase SQL Editor in this order:
 ```text
 supabase/migrations/20260610_academy_backend.sql
 supabase/migrations/20260610_fix_academy_admin_rls.sql
+supabase/migrations/20260610_harden_academy_admin_debug.sql
 ```
 
 These create and update:
@@ -100,10 +103,11 @@ They also enable Row Level Security and policies for:
 - Own-progress tracking for students.
 - Admin visibility across comments/progress.
 - One featured video at a time.
+- Admin debug RPC checks for live session/profile/RLS troubleshooting.
 
 Videos are stored as external URLs only. Use YouTube unlisted, Vimeo, TikTok, Instagram, or other public embeddable links. Do not upload large video files to the Next.js project or GitHub repo.
 
-For Academy admin access, make sure the Supabase user has a matching `profiles` row with `role = 'admin'`. The frontend also accepts `app_metadata.role === "admin"` for compatibility, but the database RLS policies use `profiles.role`.
+For Academy admin access, make sure the Supabase user has a matching `profiles` row with `role = 'admin'`. The frontend and database RLS also accept `app_metadata.role === "admin"` for compatibility.
 Student accounts created from the website are assigned `role: "student"`.
 
 ## Admin User
@@ -175,31 +179,44 @@ The frontend reads the `profiles.role` and also accepts `app_metadata.role === "
 If the admin page shows:
 
 ```text
-new row violates row-level security policy for table academy_videos
+new row violates row-level security policy for table academy_sections
 ```
 
 Check these items:
 
 1. The `20260610_fix_academy_admin_rls.sql` migration has been run successfully.
-2. The logged-in user exists in `public.profiles`.
-3. The logged-in user's `public.profiles.role` is exactly `admin`.
-4. The browser is logged into the same email that was promoted to admin.
-5. The video is being added from `/academy/admin` using an external video URL, not a local file path.
+2. The `20260610_harden_academy_admin_debug.sql` migration has been run successfully.
+3. The logged-in user exists in `public.profiles`.
+4. The logged-in user's `public.profiles.role` is exactly `admin`.
+5. The browser is logged into the same email that was promoted to admin.
+6. The video is being added from `/academy/admin` using an external video URL, not a local file path.
 
 The important policy is:
 
 ```sql
-create policy "Admins can insert academy videos"
-on public.academy_videos
+create policy "Admins can insert academy sections"
+on public.academy_sections
 for insert
 to authenticated
-with check (
-  public.is_admin()
-  and (created_by is null or created_by = auth.uid())
-);
+with check (public.is_admin());
 ```
 
-`public.is_admin()` checks `public.profiles.role = 'admin'` for the currently logged-in Supabase user. Do not disable RLS to fix this error.
+`public.is_admin()` checks `public.profiles.role = 'admin'` for the currently logged-in Supabase user and also accepts Supabase `app_metadata.role = 'admin'` for compatibility. Do not disable RLS to fix this error.
+
+The `/academy/admin` page includes an admin-only debug panel. On the live site, confirm:
+
+- `Session exists` is `Yes`
+- `Profile id` matches the shown user id
+- `Profile role` is `admin`
+- `public.is_admin()` is `true`
+
+Temporary debug page:
+
+```text
+/academy/debug
+```
+
+Use this page after deployment to confirm the live browser app can read Supabase environment variables, load the current Supabase session, find the matching `profiles` row, read Academy tables, and run a controlled `academy_sections` insert/delete test for admin users.
 
 ## Adding the First Academy Video
 

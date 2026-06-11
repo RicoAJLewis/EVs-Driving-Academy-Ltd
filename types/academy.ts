@@ -5,6 +5,7 @@ export type AcademyUser = {
   name: string;
   email: string;
   role: UserRole;
+  profileRole?: UserRole | null;
 };
 
 export type AcademySection = {
@@ -68,4 +69,34 @@ export type AcademyProgress = {
   watched: boolean;
   watchedAt?: string;
   progressSeconds: number;
+};
+
+export type AcademyAdminDebugInfo = {
+  supabaseUrlExists: boolean;
+  supabaseAnonKeyExists: boolean;
+  sessionExists: boolean;
+  userId: string | null;
+  userEmail: string | null;
+  profileId: string | null;
+  profileRole: UserRole | null;
+  appMetadataRole: string | null;
+  userMetadataRole: string | null;
+  profileMatchesSession: boolean;
+  isAdminRpc: boolean | null;
+  isAdminRpcError: string | null;
+  checkedAt: string;
+};
+
+export type AcademyAdminActionError = {
+  table: string;
+  action: string;
+  payload: Record<string, unknown> | null;
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+  userId: string | null;
+  userEmail: string | null;
+  profileRole: UserRole | null;
+  checkedAt: string;
 };
