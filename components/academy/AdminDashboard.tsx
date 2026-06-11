@@ -34,9 +34,10 @@ const emptyVideoForm = {
   category: "Beginner Lessons",
   sectionId: "",
   sortOrder: 0,
-  isPublished: false,
+  isPublished: true,
   isFeatured: false
 };
+const UNCATEGORIZED_SECTION_ID = "uncategorized";
 
 function isValidUrl(value: string) {
   try {
@@ -266,6 +267,37 @@ function VideoPreview({
   );
 }
 
+function getVideoPublicStatus(video: AcademyVideo, sections: AcademySection[]) {
+  const section = sections.find((item) => item.id === video.sectionId);
+  const reasons: string[] = [];
+
+  if (!video.isVisible) {
+    reasons.push("video unpublished");
+  }
+
+  if (!section) {
+    if (video.sectionId !== UNCATEGORIZED_SECTION_ID) {
+      reasons.push("missing section");
+    }
+  } else if (!section.isVisible) {
+    reasons.push("section unpublished");
+  }
+
+  if (!isValidUrl(video.videoUrl)) {
+    reasons.push("invalid video URL");
+  }
+
+  return {
+    isPublic: reasons.length === 0,
+    sectionName:
+      section?.title ??
+      (video.sectionId === UNCATEGORIZED_SECTION_ID
+        ? "Uncategorized"
+        : "Missing section"),
+    reasons
+  };
+}
+
 function SectionEditor({
   section,
   onSave,
@@ -441,6 +473,7 @@ function VideoEditor({
   });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const publicStatus = getVideoPublicStatus(video, sections);
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -495,10 +528,38 @@ function VideoEditor({
             <h3 style={{ margin: 0, color: "#eff6ff", fontSize: "1.2rem" }}>
               {video.title}
             </h3>
-            <p style={{ margin: "0.35rem 0 0", color: "rgba(239,246,255,0.65)" }}>
-              {video.isVisible ? "Published" : "Unpublished"} / {video.category}
-              {video.isFeatured ? " / Featured" : ""}
-            </p>
+            <div
+              style={{
+                marginTop: "0.6rem",
+                display: "flex",
+                gap: "0.5rem",
+                flexWrap: "wrap"
+              }}
+            >
+              <span style={statusPillStyle}>
+                {video.isVisible ? "Published" : "Unpublished"}
+              </span>
+              <span style={statusPillStyle}>Section: {publicStatus.sectionName}</span>
+              <span style={statusPillStyle}>
+                {video.isFeatured ? "Featured" : "Not featured"}
+              </span>
+              <span
+                style={{
+                  ...statusPillStyle,
+                  border: publicStatus.isPublic
+                    ? "1px solid rgba(74,222,128,0.32)"
+                    : "1px solid rgba(248,113,113,0.34)",
+                  color: publicStatus.isPublic ? "#dcfce7" : "#fecaca"
+                }}
+              >
+                Publicly visible: {publicStatus.isPublic ? "Yes" : "No"}
+              </span>
+            </div>
+            {!publicStatus.isPublic ? (
+              <p style={{ margin: "0.55rem 0 0", color: "#fecaca", lineHeight: 1.6 }}>
+                Hidden because: {publicStatus.reasons.join(", ")}
+              </p>
+            ) : null}
           </div>
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" onClick={() => onMove(video.id, "up")} style={secondaryButtonStyle}>
@@ -1307,6 +1368,19 @@ const mutedStyle = {
 const statStyle = {
   color: "#eff6ff",
   fontSize: "2rem"
+} as const;
+
+const statusPillStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  width: "fit-content",
+  borderRadius: "999px",
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.05)",
+  color: "rgba(239,246,255,0.82)",
+  padding: "0.35rem 0.65rem",
+  fontSize: "0.82rem",
+  fontWeight: 700
 } as const;
 
 const debugStatStyle = {

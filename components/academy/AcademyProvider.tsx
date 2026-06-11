@@ -160,6 +160,16 @@ type ProgressRow = {
 
 const AcademyContext = createContext<AcademyContextValue | null>(null);
 const DEFAULT_SECTION_TITLE = "General";
+const UNCATEGORIZED_SECTION_ID = "uncategorized";
+const UNCATEGORIZED_SECTION: AcademySection = {
+  id: UNCATEGORIZED_SECTION_ID,
+  title: "Uncategorized",
+  description: "Published tutorials that are not assigned to a section yet.",
+  order: 9999,
+  isVisible: true,
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString()
+};
 
 function getDisplayNameFromUser(user: User, profile?: ProfileRow | null) {
   const metadataName =
@@ -279,14 +289,13 @@ function toAcademySection(row: SectionRow): AcademySection {
 
 function toAcademyVideo(
   row: VideoRow,
-  fallbackSectionId: string,
   fallbackSectionTitle: string,
   commentCount: number,
   viewCount: number
 ): AcademyVideo {
   const normalizedVideoUrl = normalizeAcademyVideoUrl(row.video_url ?? "");
   const normalizedThumbnailUrl = normalizeAcademyThumbnailUrl(row.thumbnail_url ?? "");
-  const sectionId = row.section_id ?? fallbackSectionId;
+  const sectionId = row.section_id ?? UNCATEGORIZED_SECTION_ID;
   const category = row.category?.trim() || fallbackSectionTitle || DEFAULT_SECTION_TITLE;
 
   return {
@@ -521,17 +530,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     }
 
     const mappedSections = sectionRows.map(toAcademySection);
-    const fallbackSection =
-      mappedSections[0] ??
-      ({
-        id: "general",
-        title: DEFAULT_SECTION_TITLE,
-        description: "General EV Academy tutorials.",
-        order: 0,
-        isVisible: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      } satisfies AcademySection);
+    const fallbackSection = UNCATEGORIZED_SECTION;
     const mappedComments = commentRows.map((row) => ({
       id: row.id,
       videoId: row.video_id ?? "",
@@ -545,25 +544,41 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       toAcademyProgress
     );
 
+    const mappedVideos = videoRows.map((video) => {
+      const section = mappedSections.find((item) => item.id === video.section_id);
+
+        return toAcademyVideo(
+          video,
+          section?.title ?? fallbackSection.title,
+          mappedComments.filter((comment) => comment.videoId === video.id).length,
+        mappedProgress.filter(
+          (item) => item.videoId === video.id && item.watched
+        ).length
+      );
+    });
+    const publishedVideos = mappedVideos.filter((video) => video.isVisible);
+    const videosBySection = publishedVideos.reduce<Record<string, number>>(
+      (summary, video) => {
+        summary[video.sectionId] = (summary[video.sectionId] ?? 0) + 1;
+        return summary;
+      },
+      {}
+    );
+
+    if (typeof window !== "undefined") {
+      console.info("EV Academy public data", {
+        sectionsFetched: mappedSections.length,
+        videosFetched: mappedVideos.length,
+        publishedVideos: publishedVideos.length,
+        videosBySection
+      });
+    }
+
     setSections(mappedSections);
     setComments(mappedComments);
     setProgress(mappedProgress);
     setStudentCount(studentsResult.count ?? 0);
-    setVideos(
-      videoRows.map((video) => {
-        const section = mappedSections.find((item) => item.id === video.section_id);
-
-        return toAcademyVideo(
-          video,
-          fallbackSection.id,
-          section?.title ?? fallbackSection.title,
-          mappedComments.filter((comment) => comment.videoId === video.id).length,
-          mappedProgress.filter(
-            (item) => item.videoId === video.id && item.watched
-          ).length
-        );
-      })
-    );
+    setVideos(mappedVideos);
     setIsReady(true);
   }, []);
 
@@ -608,26 +623,53 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
   }, [loadCurrentUser, refreshAcademyData, refreshAdminDebugInfo]);
 
   const computedVideos = useMemo(
-    () =>
-      [...videos].sort((a, b) => {
-        if (a.sectionId === b.sectionId) {
+    () => {
+      const sectionOrder = new Map(
+        sections.map((section) => [section.id, section.order])
+      );
+
+      return [...videos].sort((a, b) => {
+        const sectionComparison =
+          (sectionOrder.get(a.sectionId) ?? 9999) -
+          (sectionOrder.get(b.sectionId) ?? 9999);
+
+        if (sectionComparison !== 0) {
+          return sectionComparison;
+        }
+
+        if (a.sectionId === b.sectionId && a.order !== b.order) {
           return a.order - b.order;
         }
 
-        return a.sectionId.localeCompare(b.sectionId);
-      }),
-    [videos]
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+    },
+    [sections, videos]
   );
   const visibleSections = useMemo(
-    () => sections.filter((section) => section.isVisible),
-    [sections]
+    () => {
+      const publishedSections = sections.filter((section) => section.isVisible);
+      const hasUncategorizedVideos = computedVideos.some(
+        (video) => video.isVisible && video.sectionId === UNCATEGORIZED_SECTION_ID
+      );
+
+      return hasUncategorizedVideos
+        ? [...publishedSections, UNCATEGORIZED_SECTION]
+        : publishedSections;
+    },
+    [computedVideos, sections]
   );
   const visibleVideos = useMemo(
     () =>
       computedVideos.filter(
         (video) =>
           video.isVisible &&
-          sections.some((section) => section.id === video.sectionId && section.isVisible)
+          (video.sectionId === UNCATEGORIZED_SECTION_ID ||
+            sections.some(
+              (section) => section.id === video.sectionId && section.isVisible
+            ))
       ),
     [computedVideos, sections]
   );

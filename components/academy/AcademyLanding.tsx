@@ -156,7 +156,7 @@ export function AcademyLanding() {
             </div>
           ) : (
             visibleSections.map((section) => {
-              const sectionVideos = getVideosForSection(section.id, true).slice(0, 3);
+              const sectionVideos = getVideosForSection(section.id, true);
 
               return (
                 <section key={section.id} style={{ display: "grid", gap: "1rem" }}>
