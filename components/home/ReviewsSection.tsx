@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Quote, Star } from "lucide-react";
 import {
@@ -50,6 +50,7 @@ const itemVariants = {
 
 type SupabaseReviewRow = {
   id: string;
+  user_id: string | null;
   reviewer_name: string | null;
   rating: number | null;
   comment: string | null;
@@ -63,6 +64,10 @@ type SupabaseErrorDetails = {
   code?: string;
   details?: string;
   hint?: string;
+};
+
+type DisplayReview = SiteReview & {
+  userId?: string | null;
 };
 
 function getDisplayNameFromSessionUser(user: {
@@ -93,13 +98,14 @@ function getRoleFromSessionUser(user: {
     : "student";
 }
 
-function toSiteReview(row: SupabaseReviewRow): SiteReview {
+function toSiteReview(row: SupabaseReviewRow): DisplayReview {
   return {
     id: row.id,
+    userId: row.user_id,
     name: row.reviewer_name?.trim() || "EV Academy Student",
     rating: Math.min(Math.max(row.rating ?? 5, 1), 5),
     comment: row.comment?.trim() || "",
-    source: WEBSITE_REVIEW_SOURCE,
+    source: normalizeReviewSource(row.source),
     date: row.created_at
       ? new Date(row.created_at).toLocaleDateString(undefined, {
           month: "short",
@@ -204,10 +210,32 @@ function Stars({
 
 function ReviewCard({
   review,
-  reducedMotion
+  reducedMotion,
+  canManage,
+  isEditing,
+  editingRating,
+  editingComment,
+  isMutating,
+  onStartEdit,
+  onCancelEdit,
+  onEditingRatingChange,
+  onEditingCommentChange,
+  onSaveEdit,
+  onDelete
 }: {
-  review: SiteReview;
+  review: DisplayReview;
   reducedMotion: boolean;
+  canManage: boolean;
+  isEditing: boolean;
+  editingRating: number;
+  editingComment: string;
+  isMutating: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onEditingRatingChange: (rating: number) => void;
+  onEditingCommentChange: (comment: string) => void;
+  onSaveEdit: () => void;
+  onDelete: () => void;
 }) {
   return (
     <motion.article
@@ -254,16 +282,51 @@ function ReviewCard({
         <Stars rating={review.rating} />
       </div>
 
-      <p
-        style={{
-          margin: 0,
-          color: "#f8fbff",
-          fontSize: "0.98rem",
-          lineHeight: 1.8
-        }}
-      >
-        "{review.comment}"
-      </p>
+      {isEditing ? (
+        <div style={{ display: "grid", gap: "0.85rem" }}>
+          <Stars
+            rating={editingRating}
+            interactive
+            onChange={onEditingRatingChange}
+          />
+          <textarea
+            value={editingComment}
+            onChange={(event) => onEditingCommentChange(event.target.value)}
+            rows={4}
+            className="reviews-textarea"
+            aria-label="Edit your review"
+          />
+          <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="reviews-submit-button"
+              onClick={onSaveEdit}
+              disabled={isMutating}
+            >
+              {isMutating ? "Saving..." : "Save Review"}
+            </button>
+            <button
+              type="button"
+              className="reviews-filter-button"
+              onClick={onCancelEdit}
+              disabled={isMutating}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p
+          style={{
+            margin: 0,
+            color: "#f8fbff",
+            fontSize: "0.98rem",
+            lineHeight: 1.8
+          }}
+        >
+          "{review.comment}"
+        </p>
+      )}
 
       <div
         style={{
@@ -305,6 +368,25 @@ function ReviewCard({
           Source: {review.source}
         </span>
       </div>
+      {canManage && !isEditing ? (
+        <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="reviews-filter-button"
+            onClick={onStartEdit}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className="reviews-filter-button"
+            onClick={onDelete}
+            disabled={isMutating}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
     </motion.article>
   );
 }
@@ -312,13 +394,40 @@ function ReviewCard({
 export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
   const reducedMotion = useReducedMotion() ?? false;
   const [currentUser, setCurrentUser] = useState<AcademyUser | null>(null);
-  const [websiteReviews, setWebsiteReviews] = useState<SiteReview[]>([]);
+  const [websiteReviews, setWebsiteReviews] = useState<DisplayReview[]>([]);
   const [activeFilter, setActiveFilter] =
     useState<ReviewFilter>(ALL_REVIEWS_FILTER);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [editingRating, setEditingRating] = useState(5);
+  const [editingComment, setEditingComment] = useState("");
+  const [mutatingReviewId, setMutatingReviewId] = useState<string | null>(null);
+
+  const loadWebsiteReviews = useCallback(async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const { data: reviewRows, error: reviewError } = await supabase
+      .from("reviews")
+      .select(
+        "id, user_id, reviewer_name, rating, comment, source, is_published, created_at"
+      )
+      .eq("is_published", true)
+      .order("created_at", { ascending: false });
+
+    if (reviewError) {
+      setStatusMessage(`Unable to load website reviews: ${reviewError.message}`);
+      return;
+    }
+
+    setWebsiteReviews((reviewRows ?? []).map(toSiteReview));
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -329,17 +438,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     }
 
     const loadReviewsAndSession = async () => {
-      const [{ data: sessionData }, { data: reviewRows, error: reviewError }] =
-        await Promise.all([
-          supabase.auth.getSession(),
-          supabase
-            .from("reviews")
-            .select(
-              "id, reviewer_name, rating, comment, source, is_published, created_at"
-            )
-            .eq("is_published", true)
-            .order("created_at", { ascending: false })
-        ]);
+      const { data: sessionData } = await supabase.auth.getSession();
 
       if (!isMounted) {
         return;
@@ -358,11 +457,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
           : null
       );
 
-      if (reviewError) {
-        setStatusMessage(`Unable to load website reviews: ${reviewError.message}`);
-      } else {
-        setWebsiteReviews((reviewRows ?? []).map(toSiteReview));
-      }
+      await loadWebsiteReviews();
     };
 
     void loadReviewsAndSession();
@@ -390,15 +485,25 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
       isMounted = false;
       authSubscription.data.subscription.unsubscribe();
     };
-  }, []);
+  }, [loadWebsiteReviews]);
 
   const normalizedSetmoreReviews = useMemo(
-    () => setmoreReviews.map(normalizeSiteReview),
+    () =>
+      setmoreReviews.map((review): DisplayReview => ({
+        ...normalizeSiteReview(review),
+        userId: null
+      })),
     [setmoreReviews]
   );
 
-  const allReviews = useMemo(() => {
-    return [...websiteReviews.map(normalizeSiteReview), ...normalizedSetmoreReviews];
+  const allReviews = useMemo<DisplayReview[]>(() => {
+    return [
+      ...websiteReviews.map((review): DisplayReview => ({
+        ...normalizeSiteReview(review),
+        userId: review.userId ?? null
+      })),
+      ...normalizedSetmoreReviews
+    ];
   }, [normalizedSetmoreReviews, websiteReviews]);
 
   const filteredReviews = useMemo(() => {
@@ -449,7 +554,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
       rating,
       comment: comment.trim(),
       source: WEBSITE_REVIEW_SOURCE,
-      is_published: false
+      is_published: true
     };
 
     const { error } = await supabase.from("reviews").insert(reviewPayload);
@@ -479,9 +584,106 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     setComment("");
     setRating(5);
     setActiveFilter(ALL_REVIEWS_FILTER);
-    setStatusMessage(
-      "Thank you. Your review has been submitted and will appear after approval."
-    );
+    await loadWebsiteReviews();
+    setStatusMessage("Thank you. Your review has been published.");
+  };
+
+  const startEditingReview = (review: DisplayReview) => {
+    setEditingReviewId(review.id);
+    setEditingRating(review.rating);
+    setEditingComment(review.comment);
+    setStatusMessage("");
+  };
+
+  const saveReviewEdit = async (review: DisplayReview) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase || !currentUser) {
+      setStatusMessage("Please log in before editing a review.");
+      return;
+    }
+
+    if (!editingComment.trim()) {
+      setStatusMessage("Please keep some review text before saving.");
+      return;
+    }
+
+    setMutatingReviewId(review.id);
+    const { error } = await supabase
+      .from("reviews")
+      .update({
+        rating: editingRating,
+        comment: editingComment.trim()
+      })
+      .eq("id", review.id)
+      .eq("user_id", currentUser.id)
+      .eq("source", WEBSITE_REVIEW_SOURCE);
+    setMutatingReviewId(null);
+
+    if (error) {
+      console.error("EVs review edit failed", {
+        table: "reviews",
+        reviewId: review.id,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: {
+          id: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role
+        }
+      });
+      setStatusMessage(formatReviewError(error));
+      return;
+    }
+
+    setEditingReviewId(null);
+    await loadWebsiteReviews();
+    setStatusMessage("Your review has been updated.");
+  };
+
+  const deleteOwnReview = async (review: DisplayReview) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase || !currentUser) {
+      setStatusMessage("Please log in before deleting a review.");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this review?")) {
+      return;
+    }
+
+    setMutatingReviewId(review.id);
+    const { error } = await supabase
+      .from("reviews")
+      .delete()
+      .eq("id", review.id)
+      .eq("user_id", currentUser.id)
+      .eq("source", WEBSITE_REVIEW_SOURCE);
+    setMutatingReviewId(null);
+
+    if (error) {
+      console.error("EVs review delete failed", {
+        table: "reviews",
+        reviewId: review.id,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: {
+          id: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role
+        }
+      });
+      setStatusMessage(formatReviewError(error));
+      return;
+    }
+
+    await loadWebsiteReviews();
+    setStatusMessage("Your review has been deleted.");
   };
 
   return (
@@ -669,7 +871,12 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
                 aria-live="polite"
                 style={{
                   margin: 0,
-                  color: statusMessage.includes("Thank you") ? "#bbf7d0" : "#fecaca",
+                  color:
+                    statusMessage.includes("Thank you") ||
+                    statusMessage.includes("updated") ||
+                    statusMessage.includes("deleted")
+                      ? "#bbf7d0"
+                      : "#fecaca",
                   lineHeight: 1.6
                 }}
               >
@@ -683,13 +890,31 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
             className="reviews-grid"
           >
             {filteredReviews.length > 0 ? (
-              filteredReviews.map((review) => (
-                <ReviewCard
-                  key={`${review.source}-${review.id}`}
-                  review={review}
-                  reducedMotion={reducedMotion}
-                />
-              ))
+              filteredReviews.map((review) => {
+                const canManage =
+                  Boolean(currentUser) &&
+                  review.source === WEBSITE_REVIEW_SOURCE &&
+                  review.userId === currentUser?.id;
+
+                return (
+                  <ReviewCard
+                    key={`${review.source}-${review.id}`}
+                    review={review}
+                    reducedMotion={reducedMotion}
+                    canManage={canManage}
+                    isEditing={editingReviewId === review.id}
+                    editingRating={editingRating}
+                    editingComment={editingComment}
+                    isMutating={mutatingReviewId === review.id}
+                    onStartEdit={() => startEditingReview(review)}
+                    onCancelEdit={() => setEditingReviewId(null)}
+                    onEditingRatingChange={setEditingRating}
+                    onEditingCommentChange={setEditingComment}
+                    onSaveEdit={() => void saveReviewEdit(review)}
+                    onDelete={() => void deleteOwnReview(review)}
+                  />
+                );
+              })
             ) : (
               <p
                 style={{

@@ -74,6 +74,10 @@ function isValidUrl(value: string) {
   }
 }
 
+function getSectionOptionLabel(section: AcademySection) {
+  return section.isVisible ? section.title : `${section.title} (unpublished)`;
+}
+
 function formatSupabaseAdminError(error: SupabaseErrorDetails | null | undefined) {
   if (!error) {
     return "Supabase action failed.";
@@ -664,7 +668,7 @@ function VideoEditor({
             >
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>
-                  {section.title}
+                  {getSectionOptionLabel(section)}
                 </option>
               ))}
             </select>
@@ -752,6 +756,7 @@ export function AdminDashboard() {
     deleteVideo,
     errorMessage,
     featuredVideo,
+    isReady,
     logout,
     lastAdminActionError,
     moveSection,
@@ -779,6 +784,30 @@ export function AdminDashboard() {
     () => [...videos].sort((a, b) => a.order - b.order),
     [videos]
   );
+
+  useEffect(() => {
+    setNewVideo((current) => {
+      if (sections.length === 0) {
+        return current.sectionId ? { ...current, sectionId: "" } : current;
+      }
+
+      const selectedSectionStillExists = sections.some(
+        (section) => section.id === current.sectionId
+      );
+
+      if (selectedSectionStillExists) {
+        return current;
+      }
+
+      const firstSection = sections[0];
+
+      return {
+        ...current,
+        sectionId: firstSection.id,
+        category: firstSection.title
+      };
+    });
+  }, [sections]);
 
   const loadAdminReviews = async () => {
     const supabase = getSupabaseClient();
@@ -827,51 +856,6 @@ export function AdminDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
-
-  const updateReviewPublished = async (reviewId: string, isPublished: boolean) => {
-    const supabase = getSupabaseClient();
-
-    if (!supabase) {
-      setReviewsFeedback({
-        tone: "error",
-        message: "Supabase is not configured for review moderation."
-      });
-      return;
-    }
-
-    setReviewsFeedback(null);
-    const { error } = await supabase
-      .from("reviews")
-      .update({ is_published: isPublished })
-      .eq("id", reviewId);
-
-    if (error) {
-      console.error("EV Academy review publish update failed", {
-        table: "reviews",
-        reviewId,
-        isPublished,
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        currentUser: currentUser
-          ? { id: currentUser.id, email: currentUser.email, role: currentUser.role }
-          : null
-      });
-      setReviewsFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
-      return;
-    }
-
-    setReviewRows((rows) =>
-      rows.map((row) =>
-        row.id === reviewId ? { ...row, is_published: isPublished } : row
-      )
-    );
-    setReviewsFeedback({
-      tone: "success",
-      message: isPublished ? "Review published." : "Review unpublished."
-    });
-  };
 
   const deleteReview = async (reviewId: string) => {
     const supabase = getSupabaseClient();
@@ -933,6 +917,19 @@ export function AdminDashboard() {
     event.preventDefault();
     setFeedback(null);
 
+    if (!isReady) {
+      setFeedback({ tone: "error", message: "Loading sections..." });
+      return;
+    }
+
+    if (sections.length === 0) {
+      setFeedback({
+        tone: "error",
+        message: "No sections exist yet. Please create a section before adding a video."
+      });
+      return;
+    }
+
     if (!newVideo.title.trim() || !isValidUrl(newVideo.videoUrl)) {
       setFeedback({
         tone: "error",
@@ -941,23 +938,22 @@ export function AdminDashboard() {
       return;
     }
 
-    if (!newVideo.sectionId && sections.length > 0) {
-      setFeedback({ tone: "error", message: "Please choose a section." });
+    const selectedSection = sections.find(
+      (section) => section.id === newVideo.sectionId
+    );
+
+    if (!selectedSection) {
+      setFeedback({ tone: "error", message: "Please choose a valid section." });
       return;
     }
 
     setIsCreating(true);
-
     try {
-      const selectedSection = sections.find(
-        (section) => section.id === newVideo.sectionId
-      );
-
       await createVideo({
-        sectionId: newVideo.sectionId,
+        sectionId: selectedSection.id,
         title: newVideo.title,
         description: newVideo.description,
-        category: newVideo.category || selectedSection?.title || "General",
+        category: selectedSection.title || "General",
         videoUrl: newVideo.videoUrl,
         thumbnailUrl: newVideo.thumbnailUrl,
         isVisible: newVideo.isPublished,
@@ -1033,7 +1029,7 @@ export function AdminDashboard() {
           View Comments
         </button>
         <button type="button" onClick={() => setActiveTab("reviews")} style={secondaryButtonStyle}>
-          Moderate Reviews
+          Manage Reviews
         </button>
       </div>
     </div>
@@ -1117,7 +1113,7 @@ export function AdminDashboard() {
           <label style={fieldStyle}>
             <span>Section</span>
             <select
-              value={newVideo.sectionId || sections[0]?.id || ""}
+              value={newVideo.sectionId}
               onChange={(event) => {
                 const selectedSection = sections.find(
                   (section) => section.id === event.target.value
@@ -1130,11 +1126,18 @@ export function AdminDashboard() {
                 }));
               }}
               style={inputStyle}
+              disabled={!isReady || sections.length === 0}
             >
-              <option value="">Choose a section</option>
+              {!isReady ? (
+                <option value="">Loading sections...</option>
+              ) : sections.length === 0 ? (
+                <option value="">No sections available</option>
+              ) : (
+                <option value="">Choose a section</option>
+              )}
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>
-                  {section.title}
+                  {getSectionOptionLabel(section)}
                 </option>
               ))}
             </select>
@@ -1283,8 +1286,8 @@ export function AdminDashboard() {
             Website Reviews
           </h2>
           <p style={{ ...mutedStyle, margin: "0.4rem 0 0", lineHeight: 1.6 }}>
-            Approve student reviews before they appear publicly. Setmore reviews
-            can remain visible as source-labeled public feedback.
+            Student reviews publish immediately. Admins can remove inappropriate
+            website or imported reviews when needed.
           </p>
         </div>
         <button
@@ -1354,17 +1357,8 @@ export function AdminDashboard() {
                 </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    void updateReviewPublished(review.id, !review.is_published)
-                  }
-                  style={secondaryButtonStyle}
-                >
-                  {review.is_published ? "Unpublish" : "Approve"}
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
-                    if (window.confirm("Delete this review?")) {
+                    if (window.confirm("Are you sure you want to delete this review?")) {
                       void deleteReview(review.id);
                     }
                   }}

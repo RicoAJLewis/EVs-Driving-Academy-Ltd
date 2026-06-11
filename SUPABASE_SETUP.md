@@ -34,22 +34,24 @@ New account confirmation emails should redirect to:
 /academy/auth/callback
 ```
 
-## Reviews Moderation
+## Reviews
 
-Run this migration in Supabase SQL Editor to create or update the `public.reviews` table and its RLS policies:
+Run these migrations in Supabase SQL Editor to create or update the `public.reviews` table and its RLS policies:
 
 ```text
 supabase/migrations/20260611_fix_reviews_rls.sql
+supabase/migrations/20260611_reviews_immediate_publish_and_owner_controls.sql
 ```
 
-The reviews policy is intentionally moderated:
+The current reviews policy is immediate-publish:
 
 - Public visitors can read only reviews where `is_published = true`.
-- Signed-in students can submit their own `EVs Driving Academy Ltd` review with `is_published = false`.
-- Signed-in students cannot create fake `Setmore` reviews or publish their own review.
-- Admins can read, approve, unpublish, and delete all reviews.
+- Signed-in students can submit their own `EVs Driving Academy Ltd` review with `is_published = true`.
+- Signed-in students can edit/delete only their own website-submitted reviews.
+- Signed-in students cannot create, edit, or delete fake `Setmore` reviews.
+- Admins can read and delete all reviews.
 
-Website-submitted reviews appear in the Admin dashboard under `Reviews`. Approve a pending review there before it appears publicly on the homepage.
+Website-submitted reviews appear publicly immediately on the homepage. Admins can remove inappropriate reviews from the Admin dashboard under `Reviews`.
 
 ## Academy Backend Schema
 
@@ -60,6 +62,7 @@ supabase/migrations/20260610_academy_backend.sql
 supabase/migrations/20260610_fix_academy_admin_rls.sql
 supabase/migrations/20260610_harden_academy_admin_debug.sql
 supabase/migrations/20260611_fix_reviews_rls.sql
+supabase/migrations/20260611_reviews_immediate_publish_and_owner_controls.sql
 ```
 
 These create and update:
@@ -81,7 +84,7 @@ They also enable Row Level Security and policies for:
 - Admin visibility across comments/progress.
 - One featured video at a time.
 - Admin debug RPC checks for live session/profile/RLS troubleshooting.
-- Moderated website reviews with admin approval.
+- Immediate-publish website reviews with owner edit/delete and admin delete controls.
 
 Videos are stored as external URLs only. Use YouTube unlisted, Vimeo, TikTok, Instagram, or other public embeddable links. Do not upload large video files to the Next.js project or GitHub repo.
 
