@@ -13,10 +13,10 @@ In Supabase > Authentication > URL Configuration, set:
 
 ```text
 Site URL:
-https://evs-driving-academy-ltd.vercel.app
+https://evsdrivingacademy.com
 
 Redirect URLs:
-https://evs-driving-academy-ltd.vercel.app/**
+https://evsdrivingacademy.com/**
 http://localhost:3000/**
 ```
 
