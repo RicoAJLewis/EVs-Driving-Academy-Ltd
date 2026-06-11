@@ -54,7 +54,15 @@ type SupabaseReviewRow = {
   rating: number | null;
   comment: string | null;
   source: string | null;
+  is_published?: boolean | null;
   created_at: string | null;
+};
+
+type SupabaseErrorDetails = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
 };
 
 function getDisplayNameFromSessionUser(user: {
@@ -124,6 +132,21 @@ function normalizeSiteReview(review: SiteReview): SiteReview {
     comment: review.comment?.trim() || "",
     source: normalizeReviewSource(review.source)
   };
+}
+
+function formatReviewError(error: SupabaseErrorDetails | null | undefined) {
+  if (!error) {
+    return "Unable to submit your review.";
+  }
+
+  return [
+    error.message,
+    error.code ? `Code: ${error.code}` : "",
+    error.details ? `Details: ${error.details}` : "",
+    error.hint ? `Hint: ${error.hint}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function Stars({
@@ -311,7 +334,10 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
           supabase.auth.getSession(),
           supabase
             .from("reviews")
-            .select("id, reviewer_name, rating, comment, source, created_at")
+            .select(
+              "id, reviewer_name, rating, comment, source, is_published, created_at"
+            )
+            .eq("is_published", true)
             .order("created_at", { ascending: false })
         ]);
 
@@ -417,29 +443,45 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     }
 
     setIsSubmitting(true);
-    const { data, error } = await supabase
-      .from("reviews")
-      .insert({
-        user_id: currentUser.id,
-        reviewer_name: currentUser.name,
-        rating,
-        comment: comment.trim(),
-        source: WEBSITE_REVIEW_SOURCE
-      })
-      .select("id, reviewer_name, rating, comment, source, created_at")
-      .single();
+    const reviewPayload = {
+      user_id: currentUser.id,
+      reviewer_name: currentUser.name || currentUser.email || "EV Academy Student",
+      rating,
+      comment: comment.trim(),
+      source: WEBSITE_REVIEW_SOURCE,
+      is_published: false
+    };
+
+    const { error } = await supabase.from("reviews").insert(reviewPayload);
     setIsSubmitting(false);
 
-    if (error || !data) {
-      setStatusMessage(error?.message ?? "Unable to submit your review.");
+    if (error) {
+      console.error("EVs review submission failed", {
+        table: "reviews",
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: {
+          id: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role
+        },
+        payload: {
+          ...reviewPayload,
+          comment: "[redacted review text]"
+        }
+      });
+      setStatusMessage(formatReviewError(error));
       return;
     }
 
-    setWebsiteReviews((reviews) => [toSiteReview(data), ...reviews]);
     setComment("");
     setRating(5);
     setActiveFilter(ALL_REVIEWS_FILTER);
-    setStatusMessage("Thank you. Your review has been added.");
+    setStatusMessage(
+      "Thank you. Your review has been submitted and will appear after approval."
+    );
   };
 
   return (

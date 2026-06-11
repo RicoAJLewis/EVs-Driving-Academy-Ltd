@@ -1,27 +1,53 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   getAcademyThumbnailUrl,
   getAcademyVideoRenderMode,
   normalizeAcademyVideoUrl
 } from "@/lib/academy-media";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademySection, AcademyVideo } from "@/types/academy";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
 
-type AdminTab = "overview" | "sections" | "videos" | "comments" | "analytics";
+type AdminTab =
+  | "overview"
+  | "sections"
+  | "videos"
+  | "reviews"
+  | "comments"
+  | "analytics";
 type Feedback = {
   tone: "success" | "error";
   message: string;
+};
+
+type AdminReviewRow = {
+  id: string;
+  user_id: string | null;
+  reviewer_name: string | null;
+  rating: number | null;
+  comment: string | null;
+  source: string | null;
+  is_published: boolean | null;
+  created_at: string | null;
+};
+
+type SupabaseErrorDetails = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
 };
 
 const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "sections", label: "Sections" },
   { id: "videos", label: "Videos / Playlists" },
+  { id: "reviews", label: "Reviews" },
   { id: "comments", label: "Comments" },
   { id: "analytics", label: "Analytics" }
 ];
@@ -46,6 +72,21 @@ function isValidUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function formatSupabaseAdminError(error: SupabaseErrorDetails | null | undefined) {
+  if (!error) {
+    return "Supabase action failed.";
+  }
+
+  return [
+    error.message,
+    error.code ? `Code: ${error.code}` : "",
+    error.details ? `Details: ${error.details}` : "",
+    error.hint ? `Hint: ${error.hint}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function FeedbackBanner({ feedback }: { feedback: Feedback }) {
@@ -730,11 +771,141 @@ export function AdminDashboard() {
   const [newVideo, setNewVideo] = useState(emptyVideoForm);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [reviewRows, setReviewRows] = useState<AdminReviewRow[]>([]);
+  const [reviewsFeedback, setReviewsFeedback] = useState<Feedback | null>(null);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
 
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => a.order - b.order),
     [videos]
   );
+
+  const loadAdminReviews = async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setReviewsFeedback({
+        tone: "error",
+        message: "Supabase is not configured for review moderation."
+      });
+      return;
+    }
+
+    setIsLoadingReviews(true);
+    setReviewsFeedback(null);
+
+    const { data, error } = await supabase
+      .from("reviews")
+      .select(
+        "id, user_id, reviewer_name, rating, comment, source, is_published, created_at"
+      )
+      .order("created_at", { ascending: false });
+
+    setIsLoadingReviews(false);
+
+    if (error) {
+      console.error("EV Academy admin reviews load failed", {
+        table: "reviews",
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: currentUser
+          ? { id: currentUser.id, email: currentUser.email, role: currentUser.role }
+          : null
+      });
+      setReviewsFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setReviewRows((data ?? []) as AdminReviewRow[]);
+  };
+
+  useEffect(() => {
+    if (activeTab === "reviews") {
+      void loadAdminReviews();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const updateReviewPublished = async (reviewId: string, isPublished: boolean) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setReviewsFeedback({
+        tone: "error",
+        message: "Supabase is not configured for review moderation."
+      });
+      return;
+    }
+
+    setReviewsFeedback(null);
+    const { error } = await supabase
+      .from("reviews")
+      .update({ is_published: isPublished })
+      .eq("id", reviewId);
+
+    if (error) {
+      console.error("EV Academy review publish update failed", {
+        table: "reviews",
+        reviewId,
+        isPublished,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: currentUser
+          ? { id: currentUser.id, email: currentUser.email, role: currentUser.role }
+          : null
+      });
+      setReviewsFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setReviewRows((rows) =>
+      rows.map((row) =>
+        row.id === reviewId ? { ...row, is_published: isPublished } : row
+      )
+    );
+    setReviewsFeedback({
+      tone: "success",
+      message: isPublished ? "Review published." : "Review unpublished."
+    });
+  };
+
+  const deleteReview = async (reviewId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setReviewsFeedback({
+        tone: "error",
+        message: "Supabase is not configured for review moderation."
+      });
+      return;
+    }
+
+    setReviewsFeedback(null);
+    const { error } = await supabase.from("reviews").delete().eq("id", reviewId);
+
+    if (error) {
+      console.error("EV Academy review delete failed", {
+        table: "reviews",
+        reviewId,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: currentUser
+          ? { id: currentUser.id, email: currentUser.email, role: currentUser.role }
+          : null
+      });
+      setReviewsFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setReviewRows((rows) => rows.filter((row) => row.id !== reviewId));
+    setReviewsFeedback({ tone: "success", message: "Review deleted." });
+  };
 
   const handleCreateSection = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -860,6 +1031,9 @@ export function AdminDashboard() {
         </button>
         <button type="button" onClick={() => setActiveTab("comments")} style={secondaryButtonStyle}>
           View Comments
+        </button>
+        <button type="button" onClick={() => setActiveTab("reviews")} style={secondaryButtonStyle}>
+          Moderate Reviews
         </button>
       </div>
     </div>
@@ -1092,6 +1266,123 @@ export function AdminDashboard() {
     </div>
   );
 
+  const renderReviews = () => (
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <div
+        style={{
+          ...cardStyle,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "1rem",
+          flexWrap: "wrap"
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+            Website Reviews
+          </h2>
+          <p style={{ ...mutedStyle, margin: "0.4rem 0 0", lineHeight: 1.6 }}>
+            Approve student reviews before they appear publicly. Setmore reviews
+            can remain visible as source-labeled public feedback.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadAdminReviews()}
+          style={secondaryButtonStyle}
+        >
+          Refresh Reviews
+        </button>
+      </div>
+
+      {reviewsFeedback ? <FeedbackBanner feedback={reviewsFeedback} /> : null}
+
+      {isLoadingReviews ? (
+        <div style={cardStyle}>
+          <p style={{ margin: 0, color: "rgba(239,246,255,0.74)" }}>
+            Loading reviews...
+          </p>
+        </div>
+      ) : reviewRows.length === 0 ? (
+        <div style={cardStyle}>
+          <p style={{ margin: 0, color: "rgba(239,246,255,0.74)" }}>
+            No website reviews have been submitted yet.
+          </p>
+        </div>
+      ) : (
+        reviewRows.map((review) => (
+          <article key={review.id} style={cardStyle}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "1rem",
+                flexWrap: "wrap"
+              }}
+            >
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                <strong style={{ color: "#eff6ff", fontSize: "1.08rem" }}>
+                  {review.reviewer_name || "EV Academy Student"}
+                </strong>
+                <span style={{ color: "#f6c15b", fontWeight: 800 }}>
+                  {"★".repeat(Math.min(Math.max(review.rating ?? 5, 1), 5))}
+                  {"☆".repeat(5 - Math.min(Math.max(review.rating ?? 5, 1), 5))}
+                </span>
+                <span style={mutedStyle}>
+                  Source: {review.source || "EVs Driving Academy Ltd"} ·{" "}
+                  {review.created_at
+                    ? new Date(review.created_at).toLocaleString()
+                    : "No date"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+                <span
+                  style={{
+                    ...statusPillStyle,
+                    color: review.is_published ? "#bbf7d0" : "#fde68a",
+                    background: review.is_published
+                      ? "rgba(34,197,94,0.14)"
+                      : "rgba(246,193,91,0.14)",
+                    border: review.is_published
+                      ? "1px solid rgba(74,222,128,0.3)"
+                      : "1px solid rgba(246,193,91,0.3)"
+                  }}
+                >
+                  {review.is_published ? "Published" : "Pending"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void updateReviewPublished(review.id, !review.is_published)
+                  }
+                  style={secondaryButtonStyle}
+                >
+                  {review.is_published ? "Unpublish" : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Delete this review?")) {
+                      void deleteReview(review.id);
+                    }
+                  }}
+                  style={dangerButtonStyle}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+            <p style={{ margin: "1rem 0 0", color: "#eff6ff", lineHeight: 1.75 }}>
+              {review.comment}
+            </p>
+          </article>
+        ))
+      )}
+    </div>
+  );
+
   const renderComments = () => (
     <div style={{ display: "grid", gap: "1rem" }}>
       {comments.length === 0 ? (
@@ -1290,6 +1581,7 @@ export function AdminDashboard() {
           {activeTab === "overview" ? renderOverview() : null}
           {activeTab === "sections" ? renderSections() : null}
           {activeTab === "videos" ? renderVideos() : null}
+          {activeTab === "reviews" ? renderReviews() : null}
           {activeTab === "comments" ? renderComments() : null}
           {activeTab === "analytics" ? renderAnalytics() : null}
         </div>

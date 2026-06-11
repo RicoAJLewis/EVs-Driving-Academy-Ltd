@@ -34,46 +34,22 @@ New account confirmation emails should redirect to:
 /academy/auth/callback
 ```
 
-Create the public reviews table:
+## Reviews Moderation
 
-```sql
-create table if not exists public.reviews (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  reviewer_name text not null,
-  rating integer not null check (rating between 1 and 5),
-  comment text not null,
-  source text not null default 'EVs Driving Academy Ltd',
-  created_at timestamp with time zone not null default now()
-);
+Run this migration in Supabase SQL Editor to create or update the `public.reviews` table and its RLS policies:
+
+```text
+supabase/migrations/20260611_fix_reviews_rls.sql
 ```
 
-Enable Row Level Security:
+The reviews policy is intentionally moderated:
 
-```sql
-alter table public.reviews enable row level security;
-```
+- Public visitors can read only reviews where `is_published = true`.
+- Signed-in students can submit their own `EVs Driving Academy Ltd` review with `is_published = false`.
+- Signed-in students cannot create fake `Setmore` reviews or publish their own review.
+- Admins can read, approve, unpublish, and delete all reviews.
 
-Allow public read access:
-
-```sql
-create policy "Public reviews are readable"
-on public.reviews
-for select
-using (true);
-```
-
-Allow authenticated users to insert their own reviews:
-
-```sql
-create policy "Authenticated users can create their own reviews"
-on public.reviews
-for insert
-to authenticated
-with check (auth.uid() = user_id);
-```
-
-Optional update/delete protection can be added later if review editing is introduced.
+Website-submitted reviews appear in the Admin dashboard under `Reviews`. Approve a pending review there before it appears publicly on the homepage.
 
 ## Academy Backend Schema
 
@@ -83,6 +59,7 @@ Run these Academy migrations in Supabase SQL Editor in this order:
 supabase/migrations/20260610_academy_backend.sql
 supabase/migrations/20260610_fix_academy_admin_rls.sql
 supabase/migrations/20260610_harden_academy_admin_debug.sql
+supabase/migrations/20260611_fix_reviews_rls.sql
 ```
 
 These create and update:
@@ -104,6 +81,7 @@ They also enable Row Level Security and policies for:
 - Admin visibility across comments/progress.
 - One featured video at a time.
 - Admin debug RPC checks for live session/profile/RLS troubleshooting.
+- Moderated website reviews with admin approval.
 
 Videos are stored as external URLs only. Use YouTube unlisted, Vimeo, TikTok, Instagram, or other public embeddable links. Do not upload large video files to the Next.js project or GitHub repo.
 
