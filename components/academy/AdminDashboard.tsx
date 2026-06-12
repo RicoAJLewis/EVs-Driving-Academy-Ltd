@@ -225,6 +225,39 @@ function formatMessageTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function logAdminMessageDiagnostic({
+  step,
+  error,
+  currentUser,
+  payload
+}: {
+  step: string;
+  error: unknown;
+  currentUser: ReturnType<typeof useAcademy>["currentUser"];
+  payload?: Record<string, unknown> | null;
+}) {
+  const supabaseError = error as SupabaseErrorDetails | null;
+
+  console.error("EV Academy admin messages failure", {
+    step,
+    message:
+      supabaseError?.message ||
+      (error instanceof Error ? error.message : "Unknown messages error"),
+    code: supabaseError?.code ?? null,
+    details: supabaseError?.details ?? null,
+    hint: supabaseError?.hint ?? null,
+    currentUser: currentUser
+      ? {
+          id: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role,
+          profileRole: currentUser.profileRole ?? null
+        }
+      : null,
+    payload: payload ?? null
+  });
+}
+
 function FeedbackBanner({ feedback }: { feedback: Feedback }) {
   return (
     <div
@@ -1114,20 +1147,36 @@ export function AdminDashboard() {
     }
 
     setIsLoadingMessageRows(true);
-    const { data, error } = await supabase
-      .from("chat_messages")
-      .select("id, thread_id, sender_id, receiver_id, body, created_at, read_at")
-      .eq("thread_id", threadId)
-      .order("created_at", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("id, thread_id, sender_id, receiver_id, body, created_at, read_at")
+        .eq("thread_id", threadId)
+        .order("created_at", { ascending: true });
 
-    setIsLoadingMessageRows(false);
+      if (error) {
+        logAdminMessageDiagnostic({
+          step: "load message rows",
+          error,
+          currentUser,
+          payload: { thread_id: threadId }
+        });
+        setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+        return;
+      }
 
-    if (error) {
-      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
-      return;
+      setMessageRows(((data ?? []) as AdminChatMessageRow[]).map(mapAdminChatMessage));
+    } catch (error) {
+      logAdminMessageDiagnostic({
+        step: "load message rows unexpected failure",
+        error,
+        currentUser,
+        payload: { thread_id: threadId }
+      });
+      setMessagesFeedback({ tone: "error", message: "Unable to load messages." });
+    } finally {
+      setIsLoadingMessageRows(false);
     }
-
-    setMessageRows(((data ?? []) as AdminChatMessageRow[]).map(mapAdminChatMessage));
   };
 
   const markMessageThreadRead = async (threadId: string) => {
@@ -1142,6 +1191,12 @@ export function AdminDashboard() {
     });
 
     if (error) {
+      logAdminMessageDiagnostic({
+        step: "mark admin thread read",
+        error,
+        currentUser,
+        payload: { thread_id_input: threadId }
+      });
       setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
       return;
     }
@@ -1167,40 +1222,60 @@ export function AdminDashboard() {
     setIsLoadingMessageThreads(true);
     setMessagesFeedback(null);
 
-    const { data, error } = await supabase
-      .from("chat_threads")
-      .select(
-        "id, student_id, admin_id, student_name, student_email, status, last_message, last_message_at, student_unread_count, admin_unread_count, created_at, updated_at, archived_at, deleted_by_admin_at"
-      )
-      .is("deleted_by_admin_at", null)
-      .order("last_message_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("chat_threads")
+        .select(
+          "id, student_id, admin_id, student_name, student_email, status, last_message, last_message_at, student_unread_count, admin_unread_count, created_at, updated_at, archived_at, deleted_by_admin_at"
+        )
+        .is("deleted_by_admin_at", null)
+        .order("last_message_at", { ascending: false });
 
-    setIsLoadingMessageThreads(false);
+      if (error) {
+        logAdminMessageDiagnostic({
+          step: "load message threads",
+          error,
+          currentUser,
+          payload: { table: "chat_threads" }
+        });
+        setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+        setMessageThreads([]);
+        setMessageRows([]);
+        return;
+      }
 
-    if (error) {
-      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
-      return;
-    }
+      const mappedThreads = ((data ?? []) as AdminChatThreadRow[]).map(mapAdminChatThread);
+      setMessageThreads(mappedThreads);
 
-    const mappedThreads = ((data ?? []) as AdminChatThreadRow[]).map(mapAdminChatThread);
-    setMessageThreads(mappedThreads);
+      const currentSelectionStillExists = mappedThreads.some(
+        (thread) => thread.id === selectedMessageThreadId
+      );
+      const nextSelectedId = currentSelectionStillExists
+        ? selectedMessageThreadId
+        : mappedThreads.find((thread) => thread.status !== "archived")?.id ??
+          mappedThreads[0]?.id ??
+          "";
 
-    const currentSelectionStillExists = mappedThreads.some(
-      (thread) => thread.id === selectedMessageThreadId
-    );
-    const nextSelectedId = currentSelectionStillExists
-      ? selectedMessageThreadId
-      : mappedThreads.find((thread) => thread.status !== "archived")?.id ??
-        mappedThreads[0]?.id ??
-        "";
+      setSelectedMessageThreadId(nextSelectedId);
 
-    setSelectedMessageThreadId(nextSelectedId);
-
-    if (nextSelectedId) {
-      await loadMessageRows(nextSelectedId);
-      await markMessageThreadRead(nextSelectedId);
-    } else {
+      if (nextSelectedId) {
+        await loadMessageRows(nextSelectedId);
+        await markMessageThreadRead(nextSelectedId);
+      } else {
+        setMessageRows([]);
+      }
+    } catch (error) {
+      logAdminMessageDiagnostic({
+        step: "load message threads unexpected failure",
+        error,
+        currentUser,
+        payload: { table: "chat_threads" }
+      });
+      setMessagesFeedback({ tone: "error", message: "Unable to load conversations." });
+      setMessageThreads([]);
       setMessageRows([]);
+    } finally {
+      setIsLoadingMessageThreads(false);
     }
   };
 
@@ -1254,6 +1329,16 @@ export function AdminDashboard() {
     setIsSendingAdminMessage(false);
 
     if (error) {
+      logAdminMessageDiagnostic({
+        step: "send admin reply",
+        error,
+        currentUser,
+        payload: {
+          thread_id: selectedMessageThread.id,
+          sender_id: currentUser.id,
+          bodyPreview: messageDraft.trim().slice(0, 120)
+        }
+      });
       setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
       return;
     }
@@ -1279,6 +1364,12 @@ export function AdminDashboard() {
       .eq("id", threadId);
 
     if (error) {
+      logAdminMessageDiagnostic({
+        step: "archive message thread",
+        error,
+        currentUser,
+        payload: { id: threadId, status: "archived" }
+      });
       setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
       return;
     }
@@ -1300,6 +1391,12 @@ export function AdminDashboard() {
       .eq("id", threadId);
 
     if (error) {
+      logAdminMessageDiagnostic({
+        step: "soft delete message thread",
+        error,
+        currentUser,
+        payload: { id: threadId }
+      });
       setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
       return;
     }
@@ -1961,7 +2058,11 @@ export function AdminDashboard() {
           {isLoadingMessageThreads && messageThreads.length === 0 ? (
             <p style={mutedStyle}>Loading conversations...</p>
           ) : filteredMessageThreads.length === 0 ? (
-            <p style={mutedStyle}>No conversations match this view yet.</p>
+            <p style={mutedStyle}>
+              {messageThreads.length === 0
+                ? "No student messages yet."
+                : "No conversations match this view yet."}
+            </p>
           ) : (
             <div className="academy-message-thread-list">
               {filteredMessageThreads.map((thread) => (

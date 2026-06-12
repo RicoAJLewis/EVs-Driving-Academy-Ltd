@@ -33,6 +33,46 @@ type ChatMessageRow = {
   read_at: string | null;
 };
 
+type SupabaseErrorLike = {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
+
+function logChatDiagnostic({
+  step,
+  error,
+  currentUser,
+  payload
+}: {
+  step: string;
+  error: unknown;
+  currentUser: ReturnType<typeof useAcademy>["currentUser"];
+  payload?: Record<string, unknown> | null;
+}) {
+  const supabaseError = error as SupabaseErrorLike | null;
+
+  console.error("EV Academy student chat failure", {
+    step,
+    message:
+      supabaseError?.message ||
+      (error instanceof Error ? error.message : "Unknown chat error"),
+    code: supabaseError?.code ?? null,
+    details: supabaseError?.details ?? null,
+    hint: supabaseError?.hint ?? null,
+    currentUser: currentUser
+      ? {
+          id: currentUser.id,
+          email: currentUser.email,
+          role: currentUser.role,
+          profileRole: currentUser.profileRole ?? null
+        }
+      : null,
+    payload: payload ?? null
+  });
+}
+
 function mapThread(row: ChatThreadRow): ChatThread {
   return {
     id: row.id,
@@ -103,7 +143,13 @@ export function StudentChatWidget() {
       .maybeSingle();
 
     if (threadError) {
-      setError(threadError.message);
+      logChatDiagnostic({
+        step: "find existing chat thread",
+        error: threadError,
+        currentUser,
+        payload: { student_id: currentUser.id }
+      });
+      setError("Unable to load your chat right now.");
       return null;
     }
 
@@ -125,13 +171,19 @@ export function StudentChatWidget() {
         .order("created_at", { ascending: true });
 
       if (messagesError) {
-        setError(messagesError.message);
+        logChatDiagnostic({
+          step: "load chat messages",
+          error: messagesError,
+          currentUser,
+          payload: { thread_id: threadId }
+        });
+        setError("Unable to load your chat right now.");
         return;
       }
 
       setMessages(((data ?? []) as ChatMessageRow[]).map(mapMessage));
     },
-    [supabase]
+    [currentUser, supabase]
   );
 
   const markThreadRead = useCallback(
@@ -140,12 +192,25 @@ export function StudentChatWidget() {
         return;
       }
 
-      await supabase.rpc("mark_chat_thread_read", { thread_id_input: threadId });
+      const { error: readError } = await supabase.rpc("mark_chat_thread_read", {
+        thread_id_input: threadId
+      });
+
+      if (readError) {
+        logChatDiagnostic({
+          step: "mark student thread read",
+          error: readError,
+          currentUser,
+          payload: { thread_id_input: threadId }
+        });
+        return;
+      }
+
       setThread((current) =>
         current?.id === threadId ? { ...current, studentUnreadCount: 0 } : current
       );
     },
-    [supabase]
+    [currentUser, supabase]
   );
 
   const refreshChat = useCallback(
@@ -156,20 +221,30 @@ export function StudentChatWidget() {
 
       setIsLoading(true);
       setError("");
-      const loadedThread = await loadThread();
+      try {
+        const loadedThread = await loadThread();
 
-      if (loadedThread) {
-        await loadMessages(loadedThread.id);
-        if (markRead) {
-          await markThreadRead(loadedThread.id);
+        if (loadedThread) {
+          await loadMessages(loadedThread.id);
+          if (markRead) {
+            await markThreadRead(loadedThread.id);
+          }
+        } else {
+          setMessages([]);
         }
-      } else {
-        setMessages([]);
+      } catch (refreshError) {
+        logChatDiagnostic({
+          step: "refresh student chat",
+          error: refreshError,
+          currentUser,
+          payload: null
+        });
+        setError("Unable to load your chat right now.");
+      } finally {
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
     },
-    [loadMessages, loadThread, markThreadRead, shouldShow]
+    [currentUser, loadMessages, loadThread, markThreadRead, shouldShow]
   );
 
   useEffect(() => {
@@ -193,37 +268,6 @@ export function StudentChatWidget() {
     }
   }, [isOpen, messages]);
 
-  const ensureThread = async () => {
-    if (!supabase || !currentUser) {
-      throw new Error("Please log in before sending a message.");
-    }
-
-    if (thread) {
-      return thread;
-    }
-
-    const { data, error: insertError } = await supabase
-      .from("chat_threads")
-      .insert({
-        student_id: currentUser.id,
-        student_name: currentUser.name,
-        student_email: currentUser.email,
-        status: "open"
-      })
-      .select(
-        "id, student_id, admin_id, student_name, student_email, status, last_message, last_message_at, student_unread_count, admin_unread_count, created_at, updated_at, archived_at, deleted_by_admin_at"
-      )
-      .single();
-
-    if (insertError) {
-      throw insertError;
-    }
-
-    const createdThread = mapThread(data as ChatThreadRow);
-    setThread(createdThread);
-    return createdThread;
-  };
-
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -235,27 +279,54 @@ export function StudentChatWidget() {
     setError("");
 
     try {
-      const activeThread = await ensureThread();
-      const { error: insertError } = await supabase!
-        .from("chat_messages")
-        .insert({
-          thread_id: activeThread.id,
-          sender_id: currentUser!.id,
-          body: draft.trim()
-        });
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
 
-      if (insertError) {
-        throw insertError;
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !authData.user) {
+        logChatDiagnostic({
+          step: "get current user",
+          error: authError ?? new Error("No authenticated Supabase user."),
+          currentUser,
+          payload: null
+        });
+        throw new Error("Please log in before sending a message.");
+      }
+
+      const payload = { message_body: draft.trim() };
+      const { error: sendError } = await supabase.rpc(
+        "send_student_chat_message",
+        payload
+      );
+
+      if (sendError) {
+        logChatDiagnostic({
+          step: "send student chat message rpc",
+          error: sendError,
+          currentUser,
+          payload: {
+            bodyPreview: draft.trim().slice(0, 120),
+            authUserId: authData.user.id,
+            authUserEmail: authData.user.email ?? null
+          }
+        });
+        throw sendError;
       }
 
       setDraft("");
       await refreshChat(true);
     } catch (sendError) {
-      setError(
-        sendError instanceof Error
-          ? sendError.message
-          : "Unable to send your message right now."
-      );
+      if (!(sendError as SupabaseErrorLike | null)?.message) {
+        logChatDiagnostic({
+          step: "send message unexpected failure",
+          error: sendError,
+          currentUser,
+          payload: { bodyPreview: draft.trim().slice(0, 120) }
+        });
+      }
+      setError("Unable to send your message right now.");
     } finally {
       setIsSending(false);
     }
