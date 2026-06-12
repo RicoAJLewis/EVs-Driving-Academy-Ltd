@@ -2,9 +2,13 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { detectAcademyVideoPlatform } from "@/lib/academy-media";
+import {
+  detectAcademyVideoPlatform,
+  getAcademyThumbnailUrl,
+  getAcademyVideoPlatformLabel
+} from "@/lib/academy-media";
 import { getSupabaseClient } from "@/lib/supabaseClient";
-import type { AcademySection, AcademyVideo } from "@/types/academy";
+import type { AcademySection, AcademyVideo, ChatMessage, ChatThread } from "@/types/academy";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
@@ -15,6 +19,7 @@ type AdminTab =
   | "sections"
   | "videos"
   | "reviews"
+  | "messages"
   | "comments"
   | "analytics";
 type Feedback = {
@@ -33,6 +38,35 @@ type AdminReviewRow = {
   created_at: string | null;
 };
 
+type AdminChatThreadRow = {
+  id: string;
+  student_id: string;
+  admin_id: string | null;
+  student_name: string | null;
+  student_email: string | null;
+  status: "open" | "archived";
+  last_message: string | null;
+  last_message_at: string | null;
+  student_unread_count: number | null;
+  admin_unread_count: number | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  deleted_by_admin_at: string | null;
+};
+
+type AdminChatMessageRow = {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  receiver_id: string | null;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+};
+
+type MessageFilter = "all" | "unread" | "archived";
+
 type SupabaseErrorDetails = {
   message?: string;
   code?: string;
@@ -45,6 +79,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "sections", label: "Sections" },
   { id: "videos", label: "Videos / Playlists" },
   { id: "reviews", label: "Reviews" },
+  { id: "messages", label: "Messages" },
   { id: "comments", label: "Comments" },
   { id: "analytics", label: "Analytics" }
 ];
@@ -71,6 +106,62 @@ function isValidUrl(value: string) {
   }
 }
 
+type ThumbnailResolveResponse = {
+  thumbnailUrl?: string;
+  message?: string;
+  platformLabel?: string;
+};
+
+async function resolveAcademyThumbnailFromVideoUrl(videoUrl: string) {
+  const trimmedUrl = videoUrl.trim();
+
+  if (!isValidUrl(trimmedUrl)) {
+    return { thumbnailUrl: "", message: "Add a valid video URL first." };
+  }
+
+  const localThumbnail = getAcademyThumbnailUrl(trimmedUrl);
+
+  if (localThumbnail) {
+    return {
+      thumbnailUrl: localThumbnail,
+      message: "Thumbnail resolved from the video platform."
+    };
+  }
+
+  try {
+    const response = await fetch("/api/academy/resolve-thumbnail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoUrl: trimmedUrl })
+    });
+    const result = (await response.json()) as ThumbnailResolveResponse;
+
+    if (!response.ok) {
+      return {
+        thumbnailUrl: "",
+        message: result.message || "Unable to resolve a thumbnail for this URL."
+      };
+    }
+
+    return {
+      thumbnailUrl: result.thumbnailUrl?.trim() || "",
+      message:
+        result.message ||
+        (result.thumbnailUrl
+          ? "Thumbnail resolved from the video platform."
+          : "No platform thumbnail was returned.")
+    };
+  } catch (error) {
+    return {
+      thumbnailUrl: "",
+      message:
+        error instanceof Error
+          ? `Thumbnail lookup failed: ${error.message}`
+          : "Thumbnail lookup failed."
+    };
+  }
+}
+
 function getSectionOptionLabel(section: AcademySection) {
   return section.isVisible ? section.title : `${section.title} (unpublished)`;
 }
@@ -88,6 +179,50 @@ function formatSupabaseAdminError(error: SupabaseErrorDetails | null | undefined
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function mapAdminChatThread(row: AdminChatThreadRow): ChatThread {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    adminId: row.admin_id,
+    studentName: row.student_name || "EV Academy Student",
+    studentEmail: row.student_email || "",
+    status: row.status,
+    lastMessage: row.last_message || "",
+    lastMessageAt: row.last_message_at,
+    studentUnreadCount: row.student_unread_count ?? 0,
+    adminUnreadCount: row.admin_unread_count ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+    deletedByAdminAt: row.deleted_by_admin_at
+  };
+}
+
+function mapAdminChatMessage(row: AdminChatMessageRow): ChatMessage {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    senderId: row.sender_id,
+    receiverId: row.receiver_id,
+    body: row.body,
+    createdAt: row.created_at,
+    readAt: row.read_at
+  };
+}
+
+function formatMessageTime(value: string | null) {
+  if (!value) {
+    return "No messages yet";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
 }
 
 function FeedbackBanner({ feedback }: { feedback: Feedback }) {
@@ -264,6 +399,7 @@ function VideoPreview({
   thumbnailUrl: string;
 }) {
   const platform = detectAcademyVideoPlatform(videoUrl);
+  const platformLabel = getAcademyVideoPlatformLabel(platform);
 
   return (
     <div style={previewPanelStyle}>
@@ -274,17 +410,54 @@ function VideoPreview({
         thumbnailUrl={thumbnailUrl}
         variant="preview"
       />
+      {thumbnailUrl.trim() ? (
+        <div
+          style={{
+            display: "grid",
+            gap: "0.45rem",
+            borderRadius: "0.9rem",
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(8,17,29,0.34)",
+            padding: "0.75rem"
+          }}
+        >
+          <span style={{ color: "rgba(239,246,255,0.72)", fontSize: "0.85rem" }}>
+            Saved card thumbnail
+          </span>
+          <div
+            aria-hidden="true"
+            style={{
+              minHeight: platform === "tiktok" || platform === "instagram" ? "180px" : "130px",
+              borderRadius: "0.8rem",
+              backgroundImage: `linear-gradient(180deg, rgba(8,17,29,0.05), rgba(8,17,29,0.58)), url('${thumbnailUrl}')`,
+              backgroundSize: "cover",
+              backgroundPosition: "center"
+            }}
+          />
+        </div>
+      ) : null}
       <p style={{ margin: 0, color: "rgba(239,246,255,0.68)", lineHeight: 1.6 }}>
-        External videos are saved as links only. TikTok and Instagram previews use
-        a vertical layout and may need to open externally if the platform blocks
-        inline playback.
+        External videos are saved as links only. Detected platform:{" "}
+        <strong style={{ color: "#eff6ff" }}>{platformLabel}</strong>.
+        TikTok and Instagram previews use a vertical layout and may need to open
+        externally if the platform blocks inline playback.
       </p>
       {platform === "tiktok" ? (
-        <p style={{ margin: 0, color: "#ffe7ae", lineHeight: 1.6 }}>
-          TikTok embeds may include platform controls or branding. For a fully
-          native EV Academy player with skip, mute, and custom controls, use a
-          direct playback URL from a video hosting service.
-        </p>
+        <>
+          {!thumbnailUrl.trim() ? (
+            <p style={{ margin: 0, color: "#ffe7ae", lineHeight: 1.6 }}>
+              When this TikTok link is saved, EV Academy will try to pull the
+              exact TikTok poster from TikTok oEmbed and store it as this
+              video&apos;s thumbnail. If TikTok does not return one, paste a
+              Thumbnail URL manually.
+            </p>
+          ) : null}
+          <p style={{ margin: 0, color: "#ffe7ae", lineHeight: 1.6 }}>
+            TikTok embeds may include platform controls or branding. For a fully
+            native EV Academy player with skip, mute, and custom controls, use a
+            direct playback URL from a video hosting service.
+          </p>
+        </>
       ) : null}
     </div>
   );
@@ -496,7 +669,38 @@ function VideoEditor({
   });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResolvingThumbnail, setIsResolvingThumbnail] = useState(false);
   const publicStatus = getVideoPublicStatus(video, sections);
+
+  const fillDraftThumbnail = async () => {
+    if (draft.thumbnailUrl.trim()) {
+      setFeedback({
+        tone: "success",
+        message: "This video already has a thumbnail URL."
+      });
+      return;
+    }
+
+    setIsResolvingThumbnail(true);
+    const result = await resolveAcademyThumbnailFromVideoUrl(draft.videoUrl);
+    setIsResolvingThumbnail(false);
+
+    if (result.thumbnailUrl) {
+      setDraft((current) => ({ ...current, thumbnailUrl: result.thumbnailUrl }));
+      setFeedback({
+        tone: "success",
+        message: "Thumbnail fetched from the video platform."
+      });
+      return;
+    }
+
+    setFeedback({
+      tone: "error",
+      message:
+        result.message ||
+        "No automatic thumbnail was returned. You can still paste a thumbnail URL manually."
+    });
+  };
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -514,16 +718,22 @@ function VideoEditor({
 
     try {
       const selectedSection = sections.find((section) => section.id === draft.sectionId);
+      const resolvedThumbnail = draft.thumbnailUrl.trim()
+        ? draft.thumbnailUrl.trim()
+        : (await resolveAcademyThumbnailFromVideoUrl(draft.videoUrl)).thumbnailUrl;
 
       await onSave(video.id, {
         title: draft.title,
         description: draft.description,
         videoUrl: draft.videoUrl,
-        thumbnailUrl: draft.thumbnailUrl,
+        thumbnailUrl: resolvedThumbnail,
         category: draft.category || selectedSection?.title || "General",
         sectionId: draft.sectionId,
         order: Number(draft.sortOrder) || 0
       });
+      if (resolvedThumbnail && !draft.thumbnailUrl.trim()) {
+        setDraft((current) => ({ ...current, thumbnailUrl: resolvedThumbnail }));
+      }
       setFeedback({ tone: "success", message: "Video updated successfully." });
     } catch (error) {
       setFeedback({
@@ -675,6 +885,11 @@ function VideoEditor({
               onChange={(event) =>
                 setDraft((current) => ({ ...current, videoUrl: event.target.value }))
               }
+              onBlur={() => {
+                if (!draft.thumbnailUrl.trim() && isValidUrl(draft.videoUrl)) {
+                  void fillDraftThumbnail();
+                }
+              }}
               placeholder="https://www.youtube.com/watch?v=..."
               style={inputStyle}
             />
@@ -692,6 +907,19 @@ function VideoEditor({
               placeholder="Optional thumbnail image URL"
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => void fillDraftThumbnail()}
+              disabled={isResolvingThumbnail || !isValidUrl(draft.videoUrl)}
+              style={{
+                ...secondaryButtonStyle,
+                justifySelf: "start",
+                opacity:
+                  isResolvingThumbnail || !isValidUrl(draft.videoUrl) ? 0.58 : 1
+              }}
+            >
+              {isResolvingThumbnail ? "Fetching..." : "Fetch platform thumbnail"}
+            </button>
           </label>
         </div>
 
@@ -754,14 +982,53 @@ export function AdminDashboard() {
   const [newVideo, setNewVideo] = useState(emptyVideoForm);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isResolvingNewThumbnail, setIsResolvingNewThumbnail] = useState(false);
   const [reviewRows, setReviewRows] = useState<AdminReviewRow[]>([]);
   const [reviewsFeedback, setReviewsFeedback] = useState<Feedback | null>(null);
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [messageThreads, setMessageThreads] = useState<ChatThread[]>([]);
+  const [selectedMessageThreadId, setSelectedMessageThreadId] = useState("");
+  const [messageRows, setMessageRows] = useState<ChatMessage[]>([]);
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
+  const [messageSearch, setMessageSearch] = useState("");
+  const [messageDraft, setMessageDraft] = useState("");
+  const [messagesFeedback, setMessagesFeedback] = useState<Feedback | null>(null);
+  const [isLoadingMessageThreads, setIsLoadingMessageThreads] = useState(false);
+  const [isLoadingMessageRows, setIsLoadingMessageRows] = useState(false);
+  const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
 
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => a.order - b.order),
     [videos]
   );
+  const filteredMessageThreads = useMemo(() => {
+    const normalizedSearch = messageSearch.trim().toLowerCase();
+
+    return messageThreads.filter((thread) => {
+      const matchesFilter =
+        messageFilter === "all"
+          ? thread.status !== "archived"
+          : messageFilter === "unread"
+            ? thread.status !== "archived" && thread.adminUnreadCount > 0
+            : thread.status === "archived";
+
+      if (!matchesFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return `${thread.studentName} ${thread.studentEmail}`
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
+  }, [messageFilter, messageSearch, messageThreads]);
+  const selectedMessageThread =
+    messageThreads.find((thread) => thread.id === selectedMessageThreadId) ??
+    filteredMessageThreads[0] ??
+    null;
 
   useEffect(() => {
     setNewVideo((current) => {
@@ -834,6 +1101,263 @@ export function AdminDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  const loadMessageRows = async (threadId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setMessagesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for messaging."
+      });
+      return;
+    }
+
+    setIsLoadingMessageRows(true);
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("id, thread_id, sender_id, receiver_id, body, created_at, read_at")
+      .eq("thread_id", threadId)
+      .order("created_at", { ascending: true });
+
+    setIsLoadingMessageRows(false);
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setMessageRows(((data ?? []) as AdminChatMessageRow[]).map(mapAdminChatMessage));
+  };
+
+  const markMessageThreadRead = async (threadId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const { error } = await supabase.rpc("mark_chat_thread_read", {
+      thread_id_input: threadId
+    });
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setMessageThreads((threads) =>
+      threads.map((thread) =>
+        thread.id === threadId ? { ...thread, adminUnreadCount: 0 } : thread
+      )
+    );
+  };
+
+  const loadMessageThreads = async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setMessagesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for messaging."
+      });
+      return;
+    }
+
+    setIsLoadingMessageThreads(true);
+    setMessagesFeedback(null);
+
+    const { data, error } = await supabase
+      .from("chat_threads")
+      .select(
+        "id, student_id, admin_id, student_name, student_email, status, last_message, last_message_at, student_unread_count, admin_unread_count, created_at, updated_at, archived_at, deleted_by_admin_at"
+      )
+      .is("deleted_by_admin_at", null)
+      .order("last_message_at", { ascending: false });
+
+    setIsLoadingMessageThreads(false);
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    const mappedThreads = ((data ?? []) as AdminChatThreadRow[]).map(mapAdminChatThread);
+    setMessageThreads(mappedThreads);
+
+    const currentSelectionStillExists = mappedThreads.some(
+      (thread) => thread.id === selectedMessageThreadId
+    );
+    const nextSelectedId = currentSelectionStillExists
+      ? selectedMessageThreadId
+      : mappedThreads.find((thread) => thread.status !== "archived")?.id ??
+        mappedThreads[0]?.id ??
+        "";
+
+    setSelectedMessageThreadId(nextSelectedId);
+
+    if (nextSelectedId) {
+      await loadMessageRows(nextSelectedId);
+      await markMessageThreadRead(nextSelectedId);
+    } else {
+      setMessageRows([]);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "messages") {
+      return;
+    }
+
+    void loadMessageThreads();
+    const intervalId = window.setInterval(() => {
+      void loadMessageThreads();
+    }, 12000);
+
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const openMessageThread = async (threadId: string) => {
+    setSelectedMessageThreadId(threadId);
+    setMessagesFeedback(null);
+    await loadMessageRows(threadId);
+    await markMessageThreadRead(threadId);
+  };
+
+  const sendAdminMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!selectedMessageThread || !messageDraft.trim() || !currentUser) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setMessagesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for messaging."
+      });
+      return;
+    }
+
+    setIsSendingAdminMessage(true);
+    setMessagesFeedback(null);
+
+    const { error } = await supabase.from("chat_messages").insert({
+      thread_id: selectedMessageThread.id,
+      sender_id: currentUser.id,
+      body: messageDraft.trim()
+    });
+
+    setIsSendingAdminMessage(false);
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    setMessageDraft("");
+    await loadMessageThreads();
+    setMessagesFeedback({ tone: "success", message: "Reply sent." });
+  };
+
+  const archiveMessageThread = async (threadId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("chat_threads")
+      .update({
+        status: "archived",
+        archived_at: new Date().toISOString()
+      })
+      .eq("id", threadId);
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    await loadMessageThreads();
+    setMessagesFeedback({ tone: "success", message: "Conversation archived." });
+  };
+
+  const deleteMessageThread = async (threadId: string) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("chat_threads")
+      .update({ deleted_by_admin_at: new Date().toISOString() })
+      .eq("id", threadId);
+
+    if (error) {
+      setMessagesFeedback({ tone: "error", message: formatSupabaseAdminError(error) });
+      return;
+    }
+
+    if (selectedMessageThreadId === threadId) {
+      setSelectedMessageThreadId("");
+      setMessageRows([]);
+    }
+
+    await loadMessageThreads();
+    setMessagesFeedback({ tone: "success", message: "Conversation removed from inbox." });
+  };
+
+  const fillNewVideoThumbnail = async (showFeedback = true) => {
+    if (newVideo.thumbnailUrl.trim()) {
+      if (showFeedback) {
+        setFeedback({
+          tone: "success",
+          message: "This video already has a thumbnail URL."
+        });
+      }
+      return;
+    }
+
+    if (!isValidUrl(newVideo.videoUrl)) {
+      if (showFeedback) {
+        setFeedback({ tone: "error", message: "Add a valid video URL first." });
+      }
+      return;
+    }
+
+    setIsResolvingNewThumbnail(true);
+    const result = await resolveAcademyThumbnailFromVideoUrl(newVideo.videoUrl);
+    setIsResolvingNewThumbnail(false);
+
+    if (result.thumbnailUrl) {
+      setNewVideo((current) => ({
+        ...current,
+        thumbnailUrl: result.thumbnailUrl
+      }));
+      if (showFeedback) {
+        setFeedback({
+          tone: "success",
+          message: "Thumbnail fetched from the video platform."
+        });
+      }
+      return;
+    }
+
+    if (showFeedback) {
+      setFeedback({
+        tone: "error",
+        message:
+          result.message ||
+          "No automatic thumbnail was returned. You can still paste a thumbnail URL manually."
+      });
+    }
+  };
 
   const deleteReview = async (reviewId: string) => {
     const supabase = getSupabaseClient();
@@ -927,13 +1451,17 @@ export function AdminDashboard() {
 
     setIsCreating(true);
     try {
+      const resolvedThumbnail = newVideo.thumbnailUrl.trim()
+        ? newVideo.thumbnailUrl.trim()
+        : (await resolveAcademyThumbnailFromVideoUrl(newVideo.videoUrl)).thumbnailUrl;
+
       await createVideo({
         sectionId: selectedSection.id,
         title: newVideo.title,
         description: newVideo.description,
         category: selectedSection.title || "General",
         videoUrl: newVideo.videoUrl,
-        thumbnailUrl: newVideo.thumbnailUrl,
+        thumbnailUrl: resolvedThumbnail,
         isVisible: newVideo.isPublished,
         isFeatured: newVideo.isFeatured,
         resolvedVideoUrl: "",
@@ -1008,6 +1536,9 @@ export function AdminDashboard() {
         </button>
         <button type="button" onClick={() => setActiveTab("reviews")} style={secondaryButtonStyle}>
           Manage Reviews
+        </button>
+        <button type="button" onClick={() => setActiveTab("messages")} style={secondaryButtonStyle}>
+          Open Messages
         </button>
       </div>
     </div>
@@ -1147,6 +1678,11 @@ export function AdminDashboard() {
                   videoUrl: event.target.value
                 }))
               }
+              onBlur={() => {
+                if (!newVideo.thumbnailUrl.trim() && isValidUrl(newVideo.videoUrl)) {
+                  void fillNewVideoThumbnail(false);
+                }
+              }}
               placeholder="https://www.youtube.com/watch?v=..."
               style={inputStyle}
             />
@@ -1164,6 +1700,21 @@ export function AdminDashboard() {
               placeholder="Optional"
               style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => void fillNewVideoThumbnail()}
+              disabled={isResolvingNewThumbnail || !isValidUrl(newVideo.videoUrl)}
+              style={{
+                ...secondaryButtonStyle,
+                justifySelf: "start",
+                opacity:
+                  isResolvingNewThumbnail || !isValidUrl(newVideo.videoUrl)
+                    ? 0.58
+                    : 1
+              }}
+            >
+              {isResolvingNewThumbnail ? "Fetching..." : "Fetch platform thumbnail"}
+            </button>
           </label>
         </div>
 
@@ -1352,6 +1903,192 @@ export function AdminDashboard() {
           </article>
         ))
       )}
+    </div>
+  );
+
+  const renderMessages = () => (
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <div
+        style={{
+          ...cardStyle,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "1rem",
+          flexWrap: "wrap",
+          alignItems: "center"
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+            Student Messages
+          </h2>
+          <p style={{ ...mutedStyle, margin: "0.45rem 0 0", lineHeight: 1.6 }}>
+            Private one-to-one conversations between students and EVs Driving Academy.
+          </p>
+        </div>
+        <button type="button" onClick={() => void loadMessageThreads()} style={secondaryButtonStyle}>
+          Refresh
+        </button>
+      </div>
+
+      {messagesFeedback ? <FeedbackBanner feedback={messagesFeedback} /> : null}
+
+      <div className="academy-messages-shell">
+        <aside className="academy-messages-list" style={cardStyle}>
+          <div className="academy-messages-toolbar">
+            <div className="academy-messages-filters">
+              {(["all", "unread", "archived"] as MessageFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setMessageFilter(filter)}
+                  className={messageFilter === filter ? "is-active" : ""}
+                >
+                  {filter === "all" ? "All" : filter === "unread" ? "Unread" : "Archived"}
+                </button>
+              ))}
+            </div>
+            <label className="academy-message-search">
+              <span className="sr-only">Search conversations</span>
+              <input
+                value={messageSearch}
+                onChange={(event) => setMessageSearch(event.target.value)}
+                placeholder="Search name or email"
+              />
+            </label>
+          </div>
+
+          {isLoadingMessageThreads && messageThreads.length === 0 ? (
+            <p style={mutedStyle}>Loading conversations...</p>
+          ) : filteredMessageThreads.length === 0 ? (
+            <p style={mutedStyle}>No conversations match this view yet.</p>
+          ) : (
+            <div className="academy-message-thread-list">
+              {filteredMessageThreads.map((thread) => (
+                <button
+                  key={thread.id}
+                  type="button"
+                  className={`academy-message-thread-card ${
+                    selectedMessageThread?.id === thread.id ? "is-selected" : ""
+                  }`}
+                  onClick={() => void openMessageThread(thread.id)}
+                >
+                  <span>
+                    <strong>{thread.studentName}</strong>
+                    {thread.studentEmail ? <small>{thread.studentEmail}</small> : null}
+                  </span>
+                  <span className="academy-message-preview">
+                    {thread.lastMessage || "No messages yet"}
+                  </span>
+                  <span className="academy-message-meta">
+                    <time dateTime={thread.lastMessageAt ?? thread.createdAt}>
+                      {formatMessageTime(thread.lastMessageAt ?? thread.createdAt)}
+                    </time>
+                    {thread.adminUnreadCount > 0 ? (
+                      <b>{thread.adminUnreadCount} unread</b>
+                    ) : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </aside>
+
+        <section className="academy-message-conversation" style={cardStyle}>
+          {selectedMessageThread ? (
+            <>
+              <div className="academy-message-conversation-header">
+                <div>
+                  <h3>{selectedMessageThread.studentName}</h3>
+                  <p>
+                    {selectedMessageThread.studentEmail || "Student email unavailable"}
+                  </p>
+                  <span>
+                    Status:{" "}
+                    {selectedMessageThread.status === "archived" ? "Archived" : "Open"}
+                  </span>
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => void archiveMessageThread(selectedMessageThread.id)}
+                    style={secondaryButtonStyle}
+                    disabled={selectedMessageThread.status === "archived"}
+                  >
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Remove this conversation from the admin inbox? The thread is soft-deleted for admin cleanup."
+                        )
+                      ) {
+                        void deleteMessageThread(selectedMessageThread.id);
+                      }
+                    }}
+                    style={dangerButtonStyle}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              <div className="academy-message-history">
+                {isLoadingMessageRows ? (
+                  <p style={mutedStyle}>Loading messages...</p>
+                ) : messageRows.length === 0 ? (
+                  <p style={mutedStyle}>No messages in this conversation yet.</p>
+                ) : (
+                  messageRows.map((message) => {
+                    const isAdminMessage = message.senderId === currentUser?.id;
+
+                    return (
+                      <article
+                        key={message.id}
+                        className={`academy-admin-message-bubble ${
+                          isAdminMessage ? "is-admin" : "is-student"
+                        }`}
+                      >
+                        <p>{message.body}</p>
+                        <time dateTime={message.createdAt}>
+                          {formatMessageTime(message.createdAt)}
+                        </time>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+
+              <form className="academy-admin-message-form" onSubmit={sendAdminMessage}>
+                <label className="sr-only" htmlFor="admin-message-reply">
+                  Reply to student
+                </label>
+                <textarea
+                  id="admin-message-reply"
+                  value={messageDraft}
+                  onChange={(event) => setMessageDraft(event.target.value)}
+                  placeholder="Write a reply..."
+                  rows={3}
+                />
+                <button
+                  type="submit"
+                  style={primaryButtonStyle}
+                  disabled={isSendingAdminMessage || !messageDraft.trim()}
+                >
+                  {isSendingAdminMessage ? "Sending..." : "Send Reply"}
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="academy-message-empty-state">
+              <h3>No conversation selected</h3>
+              <p>Select a student conversation to read and reply.</p>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 
@@ -1554,6 +2291,7 @@ export function AdminDashboard() {
           {activeTab === "sections" ? renderSections() : null}
           {activeTab === "videos" ? renderVideos() : null}
           {activeTab === "reviews" ? renderReviews() : null}
+          {activeTab === "messages" ? renderMessages() : null}
           {activeTab === "comments" ? renderComments() : null}
           {activeTab === "analytics" ? renderAnalytics() : null}
         </div>

@@ -125,6 +125,19 @@ export function isTikTokUrl(rawUrl: unknown) {
   );
 }
 
+export function getTikTokOEmbedUrl(rawUrl: unknown) {
+  const url = safeUrl(rawUrl);
+
+  if (!url || !isTikTokUrl(rawUrl)) {
+    return "";
+  }
+
+  const endpoint = new URL("https://www.tiktok.com/oembed");
+  endpoint.searchParams.set("url", url.toString());
+
+  return endpoint.toString();
+}
+
 export function extractInstagramEmbedPath(rawUrl: unknown) {
   const url = safeUrl(rawUrl);
 

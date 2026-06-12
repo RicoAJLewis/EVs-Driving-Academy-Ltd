@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { AcademyProvider } from "@/components/academy/AcademyProvider";
+import { StudentChatWidget } from "@/components/chat/StudentChatWidget";
 import "./globals.css";
 
 const siteUrl = "https://evsdrivingacademy.com";
@@ -34,7 +36,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AcademyProvider>
+          {children}
+          <StudentChatWidget />
+        </AcademyProvider>
+      </body>
     </html>
   );
 }

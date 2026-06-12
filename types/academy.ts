@@ -100,3 +100,32 @@ export type AcademyAdminActionError = {
   profileRole: UserRole | null;
   checkedAt: string;
 };
+
+export type ChatThreadStatus = "open" | "archived";
+
+export type ChatThread = {
+  id: string;
+  studentId: string;
+  adminId: string | null;
+  studentName: string;
+  studentEmail: string;
+  status: ChatThreadStatus;
+  lastMessage: string;
+  lastMessageAt: string | null;
+  studentUnreadCount: number;
+  adminUnreadCount: number;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  deletedByAdminAt: string | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  threadId: string;
+  senderId: string;
+  receiverId: string | null;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+};
