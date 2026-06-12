@@ -2,16 +2,13 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  getAcademyThumbnailUrl,
-  getAcademyVideoRenderMode,
-  normalizeAcademyVideoUrl
-} from "@/lib/academy-media";
+import { detectAcademyVideoPlatform } from "@/lib/academy-media";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademySection, AcademyVideo } from "@/types/academy";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
+import { AcademyVideoPlayer } from "./AcademyVideoPlayer";
 
 type AdminTab =
   | "overview"
@@ -266,48 +263,29 @@ function VideoPreview({
   videoUrl: string;
   thumbnailUrl: string;
 }) {
-  const normalizedVideoUrl = normalizeAcademyVideoUrl(videoUrl);
-  const renderMode = getAcademyVideoRenderMode(normalizedVideoUrl);
-  const previewThumbnail = getAcademyThumbnailUrl(normalizedVideoUrl, thumbnailUrl);
+  const platform = detectAcademyVideoPlatform(videoUrl);
 
   return (
     <div style={previewPanelStyle}>
       <span style={previewLabelStyle}>Live preview</span>
-      {renderMode === "placeholder" ? (
-        <div style={emptyPreviewStyle}>
-          Add an external video URL to preview it here. YouTube unlisted and Vimeo
-          links are recommended.
-        </div>
-      ) : renderMode === "file" ? (
-        <div style={emptyPreviewStyle}>
-          This looks like a direct file URL. The link can be saved if it is public,
-          but large video uploads should stay outside the website repo.
-        </div>
-      ) : (
-        <iframe
-          src={normalizedVideoUrl}
-          title={`Preview video: ${title || "Academy tutorial"}`}
-          loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-          style={previewVideoStyle}
-        />
-      )}
-      {previewThumbnail ? (
-        <div
-          aria-label="Thumbnail preview"
-          style={{
-            minHeight: "150px",
-            borderRadius: "1rem",
-            border: "1px solid rgba(255,255,255,0.1)",
-            background: `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.58)), url('${previewThumbnail}') center/cover`
-          }}
-        />
-      ) : null}
+      <AcademyVideoPlayer
+        title={title || "Academy tutorial"}
+        videoUrl={videoUrl}
+        thumbnailUrl={thumbnailUrl}
+        variant="preview"
+      />
       <p style={{ margin: 0, color: "rgba(239,246,255,0.68)", lineHeight: 1.6 }}>
-        If a platform blocks embedding, the video record can still be saved, but
-        playback may need to open externally.
+        External videos are saved as links only. TikTok and Instagram previews use
+        a vertical layout and may need to open externally if the platform blocks
+        inline playback.
       </p>
+      {platform === "tiktok" ? (
+        <p style={{ margin: 0, color: "#ffe7ae", lineHeight: 1.6 }}>
+          TikTok embeds may include platform controls or branding. For a fully
+          native EV Academy player with skip, mute, and custom controls, use a
+          direct playback URL from a video hosting service.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1689,28 +1667,6 @@ const previewLabelStyle = {
   color: "rgba(239,246,255,0.72)",
   fontSize: "0.9rem",
   fontWeight: 700
-} as const;
-
-const previewVideoStyle = {
-  display: "block",
-  width: "100%",
-  minHeight: "220px",
-  border: 0,
-  borderRadius: "1rem",
-  background: "#030712"
-} as const;
-
-const emptyPreviewStyle = {
-  minHeight: "220px",
-  display: "grid",
-  placeItems: "center",
-  borderRadius: "1rem",
-  border: "1px dashed rgba(255,255,255,0.16)",
-  background: "rgba(8,17,29,0.42)",
-  color: "rgba(239,246,255,0.68)",
-  textAlign: "center" as const,
-  padding: "1.25rem",
-  lineHeight: 1.7
 } as const;
 
 const tableHeaderStyle = {

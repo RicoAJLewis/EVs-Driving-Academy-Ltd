@@ -2,17 +2,104 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  getAcademyThumbnailUrl,
-  getAcademyVideoRenderMode,
-  normalizeAcademyVideoUrl
-} from "@/lib/academy-media";
+import { getAcademyThumbnailUrl } from "@/lib/academy-media";
+import type { AcademyVideo } from "@/types/academy";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { useAcademy } from "./AcademyProvider";
+import { AcademyVideoPlayer } from "./AcademyVideoPlayer";
 
 type AcademyWatchPageProps = {
   videoId: string;
 };
+
+function NextLessonCard({
+  nextVideo,
+  currentSectionId
+}: {
+  nextVideo: AcademyVideo | null;
+  currentSectionId?: string;
+}) {
+  if (!nextVideo) {
+    return (
+      <div
+        style={{
+          minHeight: "8.5rem",
+          borderRadius: "1.4rem",
+          border: "1px dashed rgba(255,255,255,0.14)",
+          background: "rgba(255,255,255,0.035)",
+          padding: "1.2rem",
+          color: "rgba(239,246,255,0.72)",
+          display: "grid",
+          alignContent: "center",
+          lineHeight: 1.65
+        }}
+      >
+        You are caught up for now. Return to EV Academy to choose another lesson.
+      </div>
+    );
+  }
+
+  const thumbnailUrl =
+    nextVideo.resolvedThumbnailUrl ||
+    getAcademyThumbnailUrl(
+      nextVideo.resolvedVideoUrl ?? nextVideo.videoUrl,
+      nextVideo.thumbnailUrl
+    );
+
+  return (
+    <Link
+      href={`/academy/watch/${nextVideo.id}`}
+      style={{
+        display: "grid",
+        gridTemplateColumns: thumbnailUrl ? "6.5rem minmax(0, 1fr)" : "1fr",
+        gap: "1rem",
+        alignItems: "center",
+        minHeight: "8.5rem",
+        borderRadius: "1.4rem",
+        border: "1px solid rgba(246,193,91,0.2)",
+        background:
+          "linear-gradient(135deg, rgba(246,193,91,0.13), rgba(127,193,255,0.07))",
+        color: "#eff6ff",
+        textDecoration: "none",
+        padding: "1rem"
+      }}
+    >
+      {thumbnailUrl ? (
+        <span
+          aria-hidden="true"
+          style={{
+            width: "100%",
+            aspectRatio: "16 / 10",
+            borderRadius: "0.95rem",
+            background: `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.58)), url('${thumbnailUrl}') center/cover`,
+            border: "1px solid rgba(255,255,255,0.08)"
+          }}
+        />
+      ) : null}
+      <span style={{ display: "grid", gap: "0.4rem" }}>
+        <span
+          style={{
+            color: "#f6c15b",
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            fontSize: "0.78rem"
+          }}
+        >
+          {nextVideo.sectionId === currentSectionId
+            ? "Next video in this section"
+            : "Suggested next lesson"}
+        </span>
+        <strong style={{ fontSize: "1.08rem", lineHeight: 1.3 }}>
+          {nextVideo.title}
+        </strong>
+        <span style={{ color: "rgba(239,246,255,0.68)", lineHeight: 1.55 }}>
+          Continue learning without relying on platform recommendations.
+        </span>
+      </span>
+    </Link>
+  );
+}
 
 export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
   const {
@@ -23,8 +110,10 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
     getCommentsForVideo,
     getSectionById,
     getVideoById,
+    getVideosForSection,
     incrementVideoView,
-    toggleCommentVisibility
+    toggleCommentVisibility,
+    visibleVideos
   } = useAcademy();
   const [commentText, setCommentText] = useState("");
   const [hasCountedView, setHasCountedView] = useState(false);
@@ -32,14 +121,36 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
   const video = getVideoById(videoId);
   const section = video ? getSectionById(video.sectionId) : undefined;
   const playbackVideoUrl = video?.resolvedVideoUrl ?? video?.videoUrl ?? "";
-  const normalizedVideoUrl = video ? normalizeAcademyVideoUrl(playbackVideoUrl) : "";
-  const videoRenderMode = video
-    ? getAcademyVideoRenderMode(normalizedVideoUrl)
-    : "placeholder";
   const thumbnailUrl = video
     ? video.resolvedThumbnailUrl ||
-      getAcademyThumbnailUrl(normalizedVideoUrl, video.thumbnailUrl)
+      getAcademyThumbnailUrl(playbackVideoUrl, video.thumbnailUrl)
     : "";
+  const sectionVideos = useMemo(
+    () =>
+      video
+        ? getVideosForSection(video.sectionId, true).sort((a, b) => a.order - b.order)
+        : [],
+    [getVideosForSection, video]
+  );
+  const nextVideo = useMemo(() => {
+    if (!video) {
+      return null;
+    }
+
+    const currentIndex = sectionVideos.findIndex((item) => item.id === video.id);
+    const nextInSection =
+      currentIndex >= 0 ? sectionVideos[currentIndex + 1] : undefined;
+
+    if (nextInSection) {
+      return nextInSection;
+    }
+
+    return (
+      visibleVideos
+        .filter((item) => item.id !== video.id && item.sectionId !== video.sectionId)
+        .sort((a, b) => a.order - b.order)[0] ?? null
+    );
+  }, [sectionVideos, video, visibleVideos]);
   const comments = useMemo(
     () =>
       getCommentsForVideo(
@@ -122,66 +233,18 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
             <article
               style={{
                 borderRadius: "1.5rem",
-                overflow: "hidden",
                 border: "1px solid rgba(255,255,255,0.08)",
                 background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)"
+                  "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)",
+                padding: "1rem",
+                overflow: "hidden"
               }}
             >
-              {videoRenderMode === "placeholder" ? (
-                <div
-                  style={{
-                    minHeight: "420px",
-                    backgroundImage: `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.68)), url('${thumbnailUrl}')`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                    display: "grid",
-                    placeItems: "center",
-                    padding: "2rem"
-                  }}
-                >
-                  <div style={{ maxWidth: "34rem", textAlign: "center" }}>
-                    <h2 style={{ color: "#eff6ff", margin: 0 }}>Video placeholder</h2>
-                    <p
-                      style={{
-                        color: "rgba(239,246,255,0.78)",
-                        lineHeight: 1.8,
-                        margin: "0.9rem 0 0"
-                      }}
-                    >
-                      Replace this placeholder embed link with your real tutorial
-                      URL to make the video playable here.
-                    </p>
-                  </div>
-                </div>
-              ) : videoRenderMode === "file" ? (
-                <video
-                  src={normalizedVideoUrl}
-                  poster={thumbnailUrl || undefined}
-                  controls
-                  preload="metadata"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    minHeight: "520px",
-                    background: "#030712"
-                  }}
-                />
-              ) : (
-                <iframe
-                  src={normalizedVideoUrl}
-                  title={`Watch tutorial: ${video.title}`}
-                  loading="lazy"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    minHeight: "520px",
-                    border: 0
-                  }}
-                />
-              )}
+              <AcademyVideoPlayer
+                title={video.title}
+                videoUrl={playbackVideoUrl}
+                thumbnailUrl={thumbnailUrl}
+              />
 
               <div style={{ padding: "1.4rem" }}>
                 <div
@@ -213,6 +276,47 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
                 </div>
               </div>
             </article>
+
+            <section
+              style={{
+                display: "grid",
+                gap: "1rem",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))"
+              }}
+            >
+              <NextLessonCard
+                nextVideo={nextVideo}
+                currentSectionId={video.sectionId}
+              />
+              <Link
+                href={backHref}
+                style={{
+                  display: "grid",
+                  alignContent: "center",
+                  minHeight: "8.5rem",
+                  borderRadius: "1.4rem",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)",
+                  color: "#eff6ff",
+                  textDecoration: "none",
+                  padding: "1.2rem"
+                }}
+              >
+                <span style={{ color: "#f6c15b", fontWeight: 800 }}>
+                  Back to Academy
+                </span>
+                <span
+                  style={{
+                    marginTop: "0.45rem",
+                    color: "rgba(239,246,255,0.72)",
+                    lineHeight: 1.6
+                  }}
+                >
+                  Return to the learning hub to choose another section or tutorial.
+                </span>
+              </Link>
+            </section>
 
             <section style={{ display: "grid", gap: "1rem" }}>
               <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.5rem" }}>

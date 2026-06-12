@@ -1,6 +1,14 @@
 const DIRECT_VIDEO_PATTERN =
   /\.(mp4|webm|ogg|mov|m4v)(\?[^#]*)?(#.*)?$/i;
 
+export type AcademyVideoPlatform =
+  | "youtube"
+  | "vimeo"
+  | "tiktok"
+  | "instagram"
+  | "direct"
+  | "unknown";
+
 function asText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
@@ -94,7 +102,27 @@ export function extractTikTokVideoId(rawUrl: unknown) {
     return parts[2] ?? null;
   }
 
+  if (parts[0] === "embed") {
+    return parts[1] ?? null;
+  }
+
   return null;
+}
+
+export function isTikTokUrl(rawUrl: unknown) {
+  const url = safeUrl(rawUrl);
+
+  if (!url) {
+    return false;
+  }
+
+  const hostname = url.hostname.replace(/^www\./, "");
+
+  return (
+    hostname === "tiktok.com" ||
+    hostname === "m.tiktok.com" ||
+    hostname === "vm.tiktok.com"
+  );
 }
 
 export function extractInstagramEmbedPath(rawUrl: unknown) {
@@ -125,6 +153,18 @@ export function extractInstagramEmbedPath(rawUrl: unknown) {
   return null;
 }
 
+export function isInstagramUrl(rawUrl: unknown) {
+  const url = safeUrl(rawUrl);
+
+  if (!url) {
+    return false;
+  }
+
+  const hostname = url.hostname.replace(/^www\./, "");
+
+  return hostname === "instagram.com";
+}
+
 export function isDirectVideoUrl(rawUrl: unknown) {
   const trimmedUrl = asText(rawUrl).trim();
 
@@ -133,6 +173,48 @@ export function isDirectVideoUrl(rawUrl: unknown) {
     trimmedUrl.startsWith("blob:") ||
     DIRECT_VIDEO_PATTERN.test(trimmedUrl)
   );
+}
+
+export function detectAcademyVideoPlatform(
+  rawUrl: unknown
+): AcademyVideoPlatform {
+  if (isDirectVideoUrl(rawUrl)) {
+    return "direct";
+  }
+
+  if (extractYouTubeVideoId(rawUrl)) {
+    return "youtube";
+  }
+
+  if (extractVimeoVideoId(rawUrl)) {
+    return "vimeo";
+  }
+
+  if (isTikTokUrl(rawUrl)) {
+    return "tiktok";
+  }
+
+  if (isInstagramUrl(rawUrl)) {
+    return "instagram";
+  }
+
+  return "unknown";
+}
+
+function withSearchParams(rawUrl: string, params: Record<string, string>) {
+  const url = safeUrl(rawUrl);
+
+  if (!url) {
+    return rawUrl;
+  }
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (!url.searchParams.has(key)) {
+      url.searchParams.set(key, value);
+    }
+  });
+
+  return url.toString();
 }
 
 export function normalizeAcademyVideoUrl(rawUrl: unknown) {
@@ -149,19 +231,26 @@ export function normalizeAcademyVideoUrl(rawUrl: unknown) {
   const youtubeId = extractYouTubeVideoId(trimmedUrl);
 
   if (youtubeId) {
-    return `https://www.youtube.com/embed/${youtubeId}`;
+    return withSearchParams(`https://www.youtube.com/embed/${youtubeId}`, {
+      rel: "0",
+      modestbranding: "1"
+    });
   }
 
   const vimeoId = extractVimeoVideoId(trimmedUrl);
 
   if (vimeoId) {
-    return `https://player.vimeo.com/video/${vimeoId}`;
+    return withSearchParams(`https://player.vimeo.com/video/${vimeoId}`, {
+      title: "0",
+      byline: "0",
+      portrait: "0"
+    });
   }
 
   const tikTokId = extractTikTokVideoId(trimmedUrl);
 
   if (tikTokId) {
-    return `https://www.tiktok.com/embed/v2/${tikTokId}`;
+    return `https://www.tiktok.com/embed/${tikTokId}`;
   }
 
   const instagramEmbedPath = extractInstagramEmbedPath(trimmedUrl);
@@ -171,6 +260,41 @@ export function normalizeAcademyVideoUrl(rawUrl: unknown) {
   }
 
   return trimmedUrl;
+}
+
+export function getAcademyVideoPlatformLabel(platform: AcademyVideoPlatform) {
+  switch (platform) {
+    case "youtube":
+      return "YouTube";
+    case "vimeo":
+      return "Vimeo";
+    case "tiktok":
+      return "TikTok";
+    case "instagram":
+      return "Instagram";
+    case "direct":
+      return "Direct video";
+    default:
+      return "External video";
+  }
+}
+
+export function canEmbedAcademyVideo(rawUrl: unknown) {
+  const platform = detectAcademyVideoPlatform(rawUrl);
+
+  if (platform === "youtube" || platform === "vimeo" || platform === "direct") {
+    return true;
+  }
+
+  if (platform === "tiktok") {
+    return Boolean(extractTikTokVideoId(rawUrl));
+  }
+
+  if (platform === "instagram") {
+    return Boolean(extractInstagramEmbedPath(rawUrl));
+  }
+
+  return false;
 }
 
 export function normalizeAcademyThumbnailUrl(rawUrl: unknown) {

@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { getAcademyThumbnailUrl } from "@/lib/academy-media";
+import {
+  detectAcademyVideoPlatform,
+  getAcademyThumbnailUrl,
+  getAcademyVideoPlatformLabel
+} from "@/lib/academy-media";
 import type { AcademyVideo } from "@/types/academy";
 
 type AcademyVideoCardProps = {
@@ -11,6 +15,9 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
   const thumbnailUrl =
     video.resolvedThumbnailUrl ||
     getAcademyThumbnailUrl(video.resolvedVideoUrl ?? video.videoUrl, video.thumbnailUrl);
+  const platform = detectAcademyVideoPlatform(video.resolvedVideoUrl ?? video.videoUrl);
+  const platformLabel = getAcademyVideoPlatformLabel(platform);
+  const isVertical = platform === "tiktok" || platform === "instagram";
 
   return (
     <Link
@@ -32,12 +39,30 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
       <div
         style={{
           height: "200px",
-          backgroundImage: `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.58)), url('${thumbnailUrl}')`,
+          backgroundImage: thumbnailUrl
+            ? `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.58)), url('${thumbnailUrl}')`
+            : "radial-gradient(circle at 50% 20%, rgba(246,193,91,0.24), transparent 30%), linear-gradient(135deg, rgba(18,34,52,0.98), rgba(8,17,29,0.98))",
           backgroundSize: "cover",
           backgroundPosition: "center",
-          position: "relative"
+          position: "relative",
+          display: "grid",
+          placeItems: "center"
         }}
       >
+        {!thumbnailUrl ? (
+          <div
+            aria-hidden="true"
+            style={{
+              width: isVertical ? "72px" : "118px",
+              aspectRatio: isVertical ? "9 / 16" : "16 / 9",
+              borderRadius: isVertical ? "1.1rem" : "0.85rem",
+              border: "1px solid rgba(255,255,255,0.18)",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03))",
+              boxShadow: "0 18px 45px rgba(0,0,0,0.25)"
+            }}
+          />
+        ) : null}
         <span
           style={{
             position: "absolute",
@@ -53,6 +78,26 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
           }}
         >
           {video.category}
+        </span>
+        <span
+          style={{
+            position: "absolute",
+            right: "1rem",
+            top: "1rem",
+            display: "inline-flex",
+            borderRadius: "999px",
+            padding: "0.35rem 0.65rem",
+            background: isVertical
+              ? "rgba(246,193,91,0.18)"
+              : "rgba(127,193,255,0.16)",
+            color: isVertical ? "#ffe7ae" : "#bfdbfe",
+            fontSize: "0.75rem",
+            fontWeight: 800,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase"
+          }}
+        >
+          {isVertical ? `${platformLabel} reel` : platformLabel}
         </span>
       </div>
       <div style={{ padding: "1.15rem 1.15rem 1.3rem" }}>
