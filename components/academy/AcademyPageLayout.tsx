@@ -92,6 +92,7 @@ export function AcademyPageLayout({
             }}
           >
             <h1
+              className="academy-hero-title"
               style={{
                 margin: 0,
                 fontSize: "clamp(2.6rem, 5vw, 4.3rem)",
@@ -103,6 +104,7 @@ export function AcademyPageLayout({
               {title}
             </h1>
             <p
+              className="academy-hero-subtitle"
               style={{
                 margin: 0,
                 maxWidth: "42rem",

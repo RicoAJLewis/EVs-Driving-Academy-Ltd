@@ -46,6 +46,7 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
   const logoSrc = "/images/logo/website-logo.png";
   const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [heartbeatActive, setHeartbeatActive] = useState(!reducedMotion);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const cooldownTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -64,6 +65,10 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   const clearCooldownTimer = () => {
     if (cooldownTimerRef.current !== null) {
@@ -139,7 +144,8 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between"
+          justifyContent: "space-between",
+          flexWrap: "wrap"
         }}
       >
         <div
@@ -252,6 +258,19 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
           </div>
         </div>
 
+        <button
+          type="button"
+          className="hero-mobile-menu-button"
+          aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="primary-mobile-menu"
+          onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </button>
+
         {rightContent ? (
           <div
             className="hero-primary-header-right"
@@ -265,6 +284,48 @@ export function HeroMenu({ reducedMotion, rightContent }: HeroMenuProps) {
             {rightContent}
           </div>
         ) : null}
+
+        <div
+          id="primary-mobile-menu"
+          className="hero-mobile-menu-panel"
+          data-open={mobileMenuOpen}
+        >
+          <div className="hero-mobile-menu-links">
+            {menuItems.map((item) => {
+              const isActive = item.isActive?.(pathname) ?? false;
+
+              if (item.external) {
+                return (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hero-mobile-menu-link"
+                    data-active={isActive}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.label}
+                  </a>
+                );
+              }
+
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="hero-mobile-menu-link"
+                  data-active={isActive}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          {rightContent ? <div className="hero-mobile-menu-actions">{rightContent}</div> : null}
+        </div>
       </div>
     </nav>
   );

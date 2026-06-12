@@ -80,6 +80,7 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
       }}
     >
       <div
+        className="academy-video-card-media"
         style={{
           minHeight: isVertical ? "260px" : "200px",
           backgroundImage: thumbnailUrl
@@ -185,7 +186,7 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
           {isVertical ? `${platformLabel} reel` : platformLabel}
         </span>
       </div>
-      <div style={{ padding: "1.15rem 1.15rem 1.3rem" }}>
+      <div className="academy-video-card-body" style={{ padding: "1.15rem 1.15rem 1.3rem" }}>
         <h3
           style={{
             margin: 0,
@@ -207,6 +208,7 @@ export function AcademyVideoCard({ video, href }: AcademyVideoCardProps) {
           {video.description}
         </p>
         <div
+          className="academy-video-card-footer"
           style={{
             marginTop: "1rem",
             display: "flex",

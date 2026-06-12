@@ -345,7 +345,7 @@ export function StudentChatWidget() {
           <div className="student-chat-header">
             <div>
               <strong>Chat with EV</strong>
-              <span>Ask a question and we’ll reply here.</span>
+              <span>Ask a question and we'll reply here.</span>
             </div>
             <button type="button" onClick={() => setIsOpen(false)} aria-label="Close chat">
               <X size={18} aria-hidden="true" />

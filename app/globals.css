@@ -25,6 +25,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top, rgba(127, 193, 255, 0.16), transparent 35%),
     linear-gradient(180deg, #09131f 0%, #08111d 100%);
@@ -908,6 +909,60 @@ img {
   flex-shrink: 0;
 }
 
+.hero-mobile-menu-button,
+.hero-mobile-menu-panel {
+  display: none;
+}
+
+.hero-mobile-menu-button {
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border: 1px solid rgba(8, 17, 29, 0.1);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: #08111d;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+.hero-mobile-menu-button span {
+  width: 1.15rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.hero-mobile-menu-panel {
+  width: 100%;
+  overflow: hidden;
+}
+
+.hero-mobile-menu-links,
+.hero-mobile-menu-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.hero-mobile-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 3rem;
+  border-radius: 0.95rem;
+  padding: 0.8rem 0.95rem;
+  background: rgba(8, 17, 29, 0.045);
+  color: rgba(8, 17, 29, 0.82);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.hero-mobile-menu-link[data-active="true"] {
+  background: rgba(246, 193, 91, 0.24);
+  color: #08111d;
+}
+
 .hero-primary-nav-links {
   min-width: 0;
   flex-wrap: wrap;
@@ -1019,6 +1074,11 @@ img {
   padding-top: clamp(10.75rem, 13vw, 12.5rem) !important;
 }
 
+.academy-admin-tabs {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(246, 193, 91, 0.5) transparent;
+}
+
 .site-footer-brand {
   max-width: 32rem;
 }
@@ -1036,46 +1096,65 @@ img {
   }
 
   .hero-primary-nav {
-    width: calc(100% - 1rem);
+    width: calc(100% - 0.85rem);
   }
 
   .hero-primary-header {
-    min-height: auto;
-    padding: 0.65rem 0.85rem;
+    min-height: 4.35rem;
+    padding: 0.48rem 0.58rem;
     border-radius: 1.15rem;
-  }
-
-  .hero-primary-header {
-    flex-direction: column;
-    align-items: stretch !important;
-    gap: 0.5rem !important;
+    align-items: center !important;
+    gap: 0.45rem !important;
   }
 
   .hero-primary-header-left {
-    width: 100%;
+    width: auto;
     align-items: center !important;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.4rem !important;
   }
 
   .hero-primary-header-right {
-    width: 100%;
-    justify-content: center !important;
-    flex-wrap: wrap;
+    display: none !important;
   }
 
   .hero-primary-nav-links {
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.28rem !important;
+    display: none !important;
   }
 
-  .hero-primary-nav-link {
-    flex: 1 1 calc(50% - 0.28rem);
-    min-height: 2.35rem;
-    padding: 0.68rem 0.82rem;
-    font-size: 0.88rem;
+  .hero-mobile-menu-button {
+    display: inline-grid;
+    gap: 0.24rem;
+    flex-shrink: 0;
+  }
+
+  .hero-mobile-menu-panel[data-open="true"] {
+    display: grid;
+    gap: 0.55rem;
+    border-top: 1px solid rgba(8, 17, 29, 0.08);
+    margin-top: 0.25rem;
+    padding-top: 0.55rem;
+  }
+
+  .hero-mobile-menu-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-mobile-menu-actions .hero-auth-group {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+
+  .hero-mobile-menu-actions .hero-auth-link,
+  .hero-mobile-menu-actions .hero-location-link {
+    width: 100%;
+    min-height: 3rem;
+    justify-content: center;
+  }
+
+  .hero-mobile-menu-actions .hero-location-label {
+    display: inline-flex;
   }
 
   .academy-hero-shell {
@@ -1103,12 +1182,22 @@ img {
 
   .academy-hero-inner {
     width: min(1180px, calc(100% - 1.25rem)) !important;
-    padding: 15.5rem 0 2.4rem !important;
+    padding: 8.8rem 0 2.25rem !important;
   }
 
   .academy-hero-copy {
     max-width: none !important;
     gap: 0.8rem !important;
+  }
+
+  .academy-hero-title {
+    font-size: clamp(2.15rem, 12vw, 3.3rem) !important;
+    line-height: 1.02 !important;
+  }
+
+  .academy-hero-subtitle {
+    font-size: 0.98rem !important;
+    line-height: 1.65 !important;
   }
 
   .academy-hero-actions {
@@ -1144,6 +1233,15 @@ img {
     padding-bottom: 2.8rem;
   }
 
+  .hero-road-heading {
+    font-size: clamp(2.35rem, 13.5vw, 4.2rem) !important;
+    line-height: 0.92 !important;
+  }
+
+  .academy-featured-grid > div:first-child {
+    min-height: 15rem !important;
+  }
+
   .about-section-grid,
   .reviews-layout {
     grid-template-columns: 1fr !important;
@@ -1170,6 +1268,7 @@ img {
   .reviews-form-panel {
     position: relative;
     top: auto;
+    padding: 1.1rem;
   }
 
   .reviews-grid {
@@ -1194,6 +1293,26 @@ img {
     max-width: 8rem;
   }
 
+  .academy-video-card-media {
+    min-height: 14.5rem !important;
+  }
+
+  .academy-video-card-body {
+    padding: 1rem !important;
+  }
+
+  .academy-video-card-footer {
+    align-items: flex-start !important;
+    flex-direction: column;
+    gap: 0.45rem !important;
+  }
+
+  .academy-video-player-shell-vertical {
+    max-width: min(100%, 24rem) !important;
+    border-radius: 1.5rem !important;
+    padding: 0.6rem !important;
+  }
+
   .academy-video-grid,
   .academy-featured-grid,
   .academy-admin-stats,
@@ -1205,13 +1324,22 @@ img {
   }
 
   .student-chat-widget {
-    right: 0.75rem;
-    bottom: 0.75rem;
+    right: max(0.65rem, env(safe-area-inset-right));
+    bottom: max(0.65rem, env(safe-area-inset-bottom));
   }
 
   .student-chat-panel {
-    width: calc(100vw - 1.5rem);
-    max-height: calc(100vh - 6rem);
+    width: min(25rem, calc(100vw - 1rem));
+    max-height: min(42rem, calc(100svh - 5.5rem));
+    border-radius: 1.15rem;
+  }
+
+  .student-chat-header {
+    padding: 0.85rem;
+  }
+
+  .student-chat-messages {
+    padding: 0.85rem;
   }
 
   .student-chat-button {
@@ -1227,6 +1355,19 @@ img {
     min-height: 2.7rem;
   }
 
+  .academy-admin-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem 0.2rem;
+    scroll-snap-type: x proximity;
+  }
+
+  .academy-admin-tabs > button {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
   .academy-messages-list,
   .academy-message-conversation {
     min-height: auto;
@@ -1234,12 +1375,25 @@ img {
 
   .academy-message-thread-list,
   .academy-message-history {
-    max-height: none;
+    max-height: 22rem;
   }
 
   .academy-admin-message-bubble,
   .student-chat-bubble {
     max-width: 92%;
+  }
+
+  .academy-message-conversation {
+    grid-template-rows: auto minmax(14rem, auto) auto;
+  }
+
+  .academy-message-conversation-header {
+    gap: 0.8rem;
+  }
+
+  .academy-admin-message-form button {
+    justify-self: stretch;
+    min-height: 2.9rem;
   }
 
   .site-footer-inner {
@@ -1264,16 +1418,11 @@ img {
   }
 
   .hero-primary-nav {
-    width: calc(100% - 1rem);
+    width: calc(100% - 0.75rem);
   }
 
   .hero-primary-header {
-    padding: 0.6rem 0.72rem;
-  }
-
-  .hero-primary-nav-link {
-    flex-basis: 100%;
-    width: 100%;
+    padding: 0.42rem 0.52rem;
   }
 
   .academy-top-right {
@@ -1281,7 +1430,7 @@ img {
   }
 
   .academy-hero-inner {
-    padding-top: 20.5rem !important;
+    padding-top: 8.45rem !important;
   }
 
   .academy-top-right-control {
@@ -1300,6 +1449,13 @@ img {
   .hero-road-line-far,
   .hero-road-line-near {
     transform: none;
+  }
+
+  .student-chat-button span {
+    max-width: 7.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -1364,6 +1520,16 @@ img {
 
   .academy-admin-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .academy-admin-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .academy-admin-tabs > button {
+    flex: 0 0 auto;
   }
 
   .academy-admin-two-col,

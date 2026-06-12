@@ -187,6 +187,21 @@ function getDisplayNameFromUser(user: User, profile?: ProfileRow | null) {
   );
 }
 
+function getDefaultProfileNameFromUser(user: User) {
+  const metadataName =
+    typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name
+      : typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : "";
+
+  return (
+    metadataName.trim() ||
+    user.email?.split("@")[0]?.replace(/[._-]+/g, " ") ||
+    "Student"
+  );
+}
+
 function getRoleFromUser(user: User, profile?: ProfileRow | null): UserRole {
   if (
     profile?.role === "admin" ||
@@ -360,6 +375,31 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       profile = data as ProfileRow | null;
+
+      if (!profile) {
+        const { data: createdProfile, error } = await supabase
+          .from("profiles")
+          .insert({
+            id: user.id,
+            full_name: getDefaultProfileNameFromUser(user),
+            role: "student"
+          })
+          .select("id, full_name, role")
+          .maybeSingle();
+
+        if (error) {
+          console.warn("EV Academy profile auto-create skipped", {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            userId: user.id,
+            userEmail: user.email ?? null
+          });
+        } else {
+          profile = createdProfile as ProfileRow | null;
+        }
+      }
     }
 
     const academyUser = toAcademyUserFromSupabase(user, profile);

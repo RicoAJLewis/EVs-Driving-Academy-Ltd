@@ -65,6 +65,10 @@ type AdminChatMessageRow = {
   read_at: string | null;
 };
 
+type AdminUnreadThreadRow = {
+  admin_unread_count: number | null;
+};
+
 type MessageFilter = "all" | "unread" | "archived";
 
 type SupabaseErrorDetails = {
@@ -210,6 +214,20 @@ function mapAdminChatMessage(row: AdminChatMessageRow): ChatMessage {
     createdAt: row.created_at,
     readAt: row.read_at
   };
+}
+
+function getAdminUnreadMessageTotal(threads: ChatThread[]) {
+  return threads.reduce((total, thread) => {
+    if (thread.status === "archived" || thread.deletedByAdminAt) {
+      return total;
+    }
+
+    return total + Math.max(0, thread.adminUnreadCount);
+  }, 0);
+}
+
+function getUnreadBadgeLabel(count: number) {
+  return count > 99 ? "99+" : String(count);
 }
 
 function formatMessageTime(value: string | null) {
@@ -1029,6 +1047,7 @@ export function AdminDashboard() {
   const [isLoadingMessageThreads, setIsLoadingMessageThreads] = useState(false);
   const [isLoadingMessageRows, setIsLoadingMessageRows] = useState(false);
   const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
+  const [adminUnreadMessageCount, setAdminUnreadMessageCount] = useState(0);
 
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => a.order - b.order),
@@ -1062,6 +1081,7 @@ export function AdminDashboard() {
     messageThreads.find((thread) => thread.id === selectedMessageThreadId) ??
     filteredMessageThreads[0] ??
     null;
+  const adminUnreadBadgeLabel = getUnreadBadgeLabel(adminUnreadMessageCount);
 
   useEffect(() => {
     setNewVideo((current) => {
@@ -1201,11 +1221,51 @@ export function AdminDashboard() {
       return;
     }
 
-    setMessageThreads((threads) =>
-      threads.map((thread) =>
+    setMessageThreads((threads) => {
+      const nextThreads = threads.map((thread) =>
         thread.id === threadId ? { ...thread, adminUnreadCount: 0 } : thread
-      )
+      );
+
+      setAdminUnreadMessageCount(getAdminUnreadMessageTotal(nextThreads));
+      return nextThreads;
+    });
+  };
+
+  const loadAdminUnreadMessageCount = async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase || currentUser?.role !== "admin") {
+      setAdminUnreadMessageCount(0);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("chat_threads")
+      .select("admin_unread_count")
+      .is("deleted_by_admin_at", null)
+      .neq("status", "archived")
+      .gt("admin_unread_count", 0);
+
+    if (error) {
+      logAdminMessageDiagnostic({
+        step: "load admin unread message count",
+        error,
+        currentUser,
+        payload: {
+          table: "chat_threads",
+          filters:
+            "deleted_by_admin_at is null, status != archived, admin_unread_count > 0"
+        }
+      });
+      return;
+    }
+
+    const unreadTotal = ((data ?? []) as AdminUnreadThreadRow[]).reduce(
+      (total, thread) => total + Math.max(0, thread.admin_unread_count ?? 0),
+      0
     );
+
+    setAdminUnreadMessageCount(unreadTotal);
   };
 
   const loadMessageThreads = async () => {
@@ -1246,6 +1306,7 @@ export function AdminDashboard() {
 
       const mappedThreads = ((data ?? []) as AdminChatThreadRow[]).map(mapAdminChatThread);
       setMessageThreads(mappedThreads);
+      setAdminUnreadMessageCount(getAdminUnreadMessageTotal(mappedThreads));
 
       const currentSelectionStillExists = mappedThreads.some(
         (thread) => thread.id === selectedMessageThreadId
@@ -1292,6 +1353,21 @@ export function AdminDashboard() {
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  useEffect(() => {
+    if (currentUser?.role !== "admin") {
+      setAdminUnreadMessageCount(0);
+      return;
+    }
+
+    void loadAdminUnreadMessageCount();
+    const intervalId = window.setInterval(() => {
+      void loadAdminUnreadMessageCount();
+    }, 12000);
+
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, currentUser?.role]);
 
   const openMessageThread = async (threadId: string) => {
     setSelectedMessageThreadId(threadId);
@@ -2360,7 +2436,10 @@ export function AdminDashboard() {
             onRunInsertTest={testAdminSectionInsert}
           />
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div
+            className="academy-admin-tabs"
+            style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}
+          >
             {adminTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -2383,7 +2462,38 @@ export function AdminDashboard() {
                   cursor: "pointer"
                 }}
               >
-                {tab.label}
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.45rem"
+                  }}
+                >
+                  {tab.label}
+                  {tab.id === "messages" && adminUnreadMessageCount > 0 ? (
+                    <span
+                      aria-label={`${adminUnreadMessageCount} unread admin messages`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minWidth: "1.35rem",
+                        height: "1.35rem",
+                        borderRadius: "999px",
+                        padding: "0 0.4rem",
+                        background:
+                          "linear-gradient(135deg, rgba(246,193,91,1), rgba(240,171,36,1))",
+                        color: "#07111d",
+                        fontSize: "0.74rem",
+                        fontWeight: 900,
+                        lineHeight: 1,
+                        boxShadow: "0 0.5rem 1.2rem rgba(246,193,91,0.22)"
+                      }}
+                    >
+                      {adminUnreadBadgeLabel}
+                    </span>
+                  ) : null}
+                </span>
               </button>
             ))}
           </div>

@@ -331,6 +331,7 @@ export function AcademyVideoPlayer({
 
   const wrappedPlayer = vertical ? (
     <div
+      className="academy-video-player-shell academy-video-player-shell-vertical"
       style={{
         width: "100%",
         maxWidth,
