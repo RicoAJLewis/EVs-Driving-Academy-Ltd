@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { isAdminRole } from "@/lib/academy-roles";
 import { getAcademyThumbnailUrl } from "@/lib/academy-media";
 import type { AcademyVideo } from "@/types/academy";
 import {
@@ -162,7 +163,7 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
     () =>
       getCommentsForVideo(
         videoId,
-        currentUser?.role === "admin"
+        isAdminRole(currentUser?.role)
       ),
     [currentUser?.role, getCommentsForVideo, videoId]
   );
@@ -188,7 +189,7 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
   };
 
   const backHref =
-    currentUser?.role === "admin"
+    isAdminRole(currentUser?.role)
       ? "/academy/admin"
       : currentUser?.role === "student" || currentUser?.role === "visitor"
         ? "/academy/dashboard"
@@ -520,7 +521,7 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
                             </button>
                           ) : null}
 
-                          {currentUser?.role === "admin" ? (
+                          {isAdminRole(currentUser?.role) ? (
                             <>
                               <button
                                 type="button"

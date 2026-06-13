@@ -179,6 +179,14 @@ body {
   padding: 0.75rem 0.85rem;
 }
 
+.student-chat-sender,
+.academy-admin-message-sender {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  opacity: 0.82;
+}
+
 .student-chat-bubble p {
   margin: 0;
   line-height: 1.55;
@@ -471,6 +479,114 @@ body {
   justify-self: end;
 }
 
+.academy-admin-management-toolbar {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.academy-admin-role-filters {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.academy-admin-role-filters button {
+  min-height: 2.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #eff6ff;
+  padding: 0.55rem 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.academy-admin-role-filters button.is-active {
+  border-color: rgba(246, 193, 91, 0.78);
+  background: rgba(246, 193, 91, 0.16);
+  color: #f6c15b;
+}
+
+.academy-admin-profile-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.academy-admin-profile-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  border-radius: 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 17, 29, 0.38);
+  padding: 1rem;
+}
+
+.academy-admin-profile-heading {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+  color: #eff6ff;
+}
+
+.academy-admin-profile-card p,
+.academy-admin-profile-card small {
+  display: block;
+  margin: 0.28rem 0 0;
+  color: rgba(239, 246, 255, 0.7);
+}
+
+.academy-role-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.academy-role-badge.is-owner {
+  background: rgba(246, 193, 91, 0.2);
+  color: #f6c15b;
+  border: 1px solid rgba(246, 193, 91, 0.34);
+}
+
+.academy-role-badge.is-admin {
+  background: rgba(127, 193, 255, 0.16);
+  color: #9ed0ff;
+  border: 1px solid rgba(127, 193, 255, 0.28);
+}
+
+.academy-role-badge.is-student,
+.academy-role-badge.is-visitor {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(239, 246, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.academy-admin-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.academy-admin-permission-note {
+  max-width: 18rem;
+  color: rgba(239, 246, 255, 0.64);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .academy-message-empty-state {
   min-height: 20rem;
   display: grid;
@@ -711,6 +827,57 @@ img {
 
 .academy-featured-grid {
   display: grid;
+}
+
+.academy-featured-link,
+.academy-featured-title-link,
+.academy-featured-cta {
+  transition:
+    transform 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease,
+    color 0.22s ease;
+}
+
+.academy-featured-link:hover,
+.academy-featured-link:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(246, 193, 91, 0.42) !important;
+  box-shadow: 0 30px 78px rgba(8, 17, 29, 0.32);
+  outline: none;
+}
+
+.academy-featured-title-link {
+  color: #eff6ff;
+  text-decoration: none;
+}
+
+.academy-featured-title-link:hover,
+.academy-featured-title-link:focus-visible {
+  color: #ffe7ae;
+  outline: none;
+}
+
+.academy-featured-cta {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(246,193,91,1), rgba(240,171,36,1));
+  color: #0f172a;
+  padding: 0.8rem 1.25rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 20px 48px rgba(8, 17, 29, 0.24);
+}
+
+.academy-featured-cta:hover,
+.academy-featured-cta:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 58px rgba(246, 193, 91, 0.22);
+  outline: none;
 }
 
 .academy-video-card:hover,
@@ -1388,6 +1555,23 @@ img {
   .academy-admin-tabs > button {
     flex: 0 0 auto;
     scroll-snap-align: start;
+  }
+
+  .academy-admin-management-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .academy-admin-role-filters {
+    justify-content: flex-start;
+  }
+
+  .academy-admin-profile-card {
+    align-items: stretch;
+  }
+
+  .academy-admin-profile-actions,
+  .academy-admin-profile-actions button {
+    width: 100%;
   }
 
   .academy-messages-list,

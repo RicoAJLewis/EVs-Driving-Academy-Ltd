@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
+import { formatAdminSenderLabel, isAdminRole } from "@/lib/academy-roles";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { ChatMessage, ChatThread } from "@/types/academy";
@@ -32,6 +33,12 @@ type ChatMessageRow = {
   body: string;
   created_at: string;
   read_at: string | null;
+};
+
+type ChatSenderProfileRow = {
+  id: string;
+  full_name: string | null;
+  role: "admin" | "owner" | "student" | "visitor" | null;
 };
 
 type SupabaseErrorLike = {
@@ -93,7 +100,15 @@ function mapThread(row: ChatThreadRow): ChatThread {
   };
 }
 
-function mapMessage(row: ChatMessageRow): ChatMessage {
+function mapMessage(
+  row: ChatMessageRow,
+  profileById: Map<string, ChatSenderProfileRow> = new Map()
+): ChatMessage {
+  const senderProfile = profileById.get(row.sender_id);
+  const senderLabel = isAdminRole(senderProfile?.role)
+    ? formatAdminSenderLabel(senderProfile?.full_name)
+    : senderProfile?.full_name || "EV Academy Student";
+
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -101,7 +116,10 @@ function mapMessage(row: ChatMessageRow): ChatMessage {
     receiverId: row.receiver_id,
     body: row.body,
     createdAt: row.created_at,
-    readAt: row.read_at
+    readAt: row.read_at,
+    senderName: senderProfile?.full_name ?? undefined,
+    senderRole: senderProfile?.role ?? null,
+    senderLabel
   };
 }
 
@@ -125,10 +143,10 @@ export function StudentChatWidget() {
   const [error, setError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const supabase = useMemo(() => getSupabaseClient(), []);
-  const shouldShow = Boolean(isReady && currentUser && currentUser.role !== "admin");
+  const shouldShow = Boolean(isReady && currentUser && !isAdminRole(currentUser.role));
 
   const loadThread = useCallback(async () => {
-    if (!supabase || !currentUser || currentUser.role === "admin") {
+    if (!supabase || !currentUser || isAdminRole(currentUser.role)) {
       return null;
     }
 
@@ -182,7 +200,22 @@ export function StudentChatWidget() {
         return;
       }
 
-      setMessages(((data ?? []) as ChatMessageRow[]).map(mapMessage));
+      const rows = (data ?? []) as ChatMessageRow[];
+      const senderIds = Array.from(new Set(rows.map((message) => message.sender_id)));
+      const profileById = new Map<string, ChatSenderProfileRow>();
+
+      if (senderIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .in("id", senderIds);
+
+        ((profileRows ?? []) as ChatSenderProfileRow[]).forEach((profile) => {
+          profileById.set(profile.id, profile);
+        });
+      }
+
+      setMessages(rows.map((message) => mapMessage(message, profileById)));
     },
     [currentUser, supabase]
   );
@@ -378,6 +411,9 @@ export function StudentChatWidget() {
                     key={message.id}
                     className={`student-chat-bubble ${isMine ? "is-mine" : "is-admin"}`}
                   >
+                    <strong className="student-chat-sender">
+                      {isMine ? "You" : message.senderLabel || "EV Academy"}
+                    </strong>
                     <p>{message.body}</p>
                     <time dateTime={message.createdAt}>
                       {formatChatTime(message.createdAt)}

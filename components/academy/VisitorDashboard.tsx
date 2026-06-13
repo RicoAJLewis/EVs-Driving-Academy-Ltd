@@ -41,6 +41,10 @@ export function VisitorDashboard() {
         featuredVideo.thumbnailUrl
       )
     : "";
+  const featuredHref = featuredVideo ? `/academy/watch/${featuredVideo.id}` : "";
+  const featuredLabel = featuredVideo
+    ? `Watch featured tutorial: ${featuredVideo.title}`
+    : "";
 
   return (
     <AcademyProtected allowedRoles={["student", "visitor"]}>
@@ -74,17 +78,32 @@ export function VisitorDashboard() {
             }}
             className="academy-featured-grid"
           >
-            <div
-              style={{
-                borderRadius: "1.5rem",
-                overflow: "hidden",
-                minHeight: "360px",
-                border: "1px solid rgba(255,255,255,0.08)",
-                background: featuredVideo
-                  ? `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.68)), url('${featuredThumbnailUrl}') center/cover`
-                  : "rgba(255,255,255,0.04)"
-              }}
-            />
+            {featuredVideo ? (
+              <Link
+                href={featuredHref}
+                aria-label={featuredLabel}
+                className="academy-featured-link"
+                style={{
+                  borderRadius: "1.5rem",
+                  overflow: "hidden",
+                  minHeight: "360px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: `linear-gradient(180deg, rgba(8,17,29,0.08), rgba(8,17,29,0.68)), url('${featuredThumbnailUrl}') center/cover`,
+                  display: "block",
+                  cursor: "pointer"
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  borderRadius: "1.5rem",
+                  overflow: "hidden",
+                  minHeight: "360px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(255,255,255,0.04)"
+                }}
+              />
+            )}
             <article
               style={{
                 borderRadius: "1.5rem",
@@ -113,7 +132,17 @@ export function VisitorDashboard() {
                 Featured Video
               </span>
               <h2 style={{ margin: 0, fontSize: "1.8rem" }}>
-                {featuredVideo?.title ?? "No tutorial videos available yet"}
+                {featuredVideo ? (
+                  <Link
+                    href={featuredHref}
+                    aria-label={featuredLabel}
+                    className="academy-featured-title-link"
+                  >
+                    {featuredVideo.title}
+                  </Link>
+                ) : (
+                  "No tutorial videos available yet"
+                )}
               </h2>
               <p
                 style={{
@@ -127,21 +156,9 @@ export function VisitorDashboard() {
               </p>
               {featuredVideo ? (
                 <Link
-                  href={`/academy/watch/${featuredVideo.id}`}
-                  style={{
-                    display: "inline-flex",
-                    width: "fit-content",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minHeight: "3rem",
-                    padding: "0.8rem 1.3rem",
-                    borderRadius: "999px",
-                    background:
-                      "linear-gradient(135deg, rgba(246,193,91,1), rgba(240,171,36,1))",
-                    color: "#0f172a",
-                    fontWeight: 700,
-                    textDecoration: "none"
-                  }}
+                  href={featuredHref}
+                  aria-label={featuredLabel}
+                  className="academy-featured-cta"
                 >
                   Watch featured tutorial
                 </Link>

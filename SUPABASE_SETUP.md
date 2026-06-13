@@ -232,3 +232,35 @@ After running the migrations and promoting the admin:
 6. Confirm that the success message appears and the video record shows in the admin list.
 
 If the insert fails, run the admin profile confirmation query above and verify the current browser user is the same email.
+
+## Admin Management and Owner Role
+
+Run `supabase/migrations/20260613_add_admin_management_and_owner_role.sql` before using the `Admins` tab.
+
+This migration adds:
+
+- `owner` as the protected first-admin role.
+- `admin` as the promoted staff/admin role.
+- `student` as the default role for new signups.
+- `profiles.email` for admin profile management.
+- `public.is_admin()` returning true for both `admin` and `owner`.
+- `public.is_owner()` for owner-only actions.
+- `public.promote_user_to_admin(target_user_id uuid)`.
+- `public.demote_admin_to_student(target_user_id uuid)`.
+- An auth trigger that creates missing `public.profiles` rows for future signups.
+
+Rico Lewis is promoted to `owner` by matching the existing Supabase Auth email:
+
+```sql
+select id, full_name, email, role
+from public.profiles
+where lower(email) = 'ricoajlewis@gmail.com';
+```
+
+Expected result:
+
+```text
+role = owner
+```
+
+Admins can promote students from `/academy/admin` > `Admins`. Only the owner can demote admins back to students. The owner account is protected from accidental self-demotion.

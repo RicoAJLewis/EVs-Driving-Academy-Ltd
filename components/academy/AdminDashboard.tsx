@@ -7,8 +7,19 @@ import {
   getAcademyThumbnailUrl,
   getAcademyVideoPlatformLabel
 } from "@/lib/academy-media";
+import {
+  formatAdminSenderLabel,
+  isAdminRole,
+  isOwnerRole
+} from "@/lib/academy-roles";
 import { getSupabaseClient } from "@/lib/supabaseClient";
-import type { AcademySection, AcademyVideo, ChatMessage, ChatThread } from "@/types/academy";
+import type {
+  AcademySection,
+  AcademyVideo,
+  ChatMessage,
+  ChatThread,
+  UserRole
+} from "@/types/academy";
 import {
   SkeletonAdminRows,
   SkeletonMessageBubble,
@@ -21,6 +32,7 @@ import { AcademyVideoPlayer } from "./AcademyVideoPlayer";
 
 type AdminTab =
   | "overview"
+  | "admins"
   | "sections"
   | "videos"
   | "reviews"
@@ -70,11 +82,26 @@ type AdminChatMessageRow = {
   read_at: string | null;
 };
 
+type AdminManagedProfileRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: UserRole | null;
+  created_at: string | null;
+};
+
+type ChatSenderProfileRow = {
+  id: string;
+  full_name: string | null;
+  role: UserRole | null;
+};
+
 type AdminUnreadThreadRow = {
   admin_unread_count: number | null;
 };
 
 type MessageFilter = "all" | "unread" | "archived";
+type AdminRoleFilter = "all" | "student" | "admin" | "owner";
 
 type SupabaseErrorDetails = {
   message?: string;
@@ -85,6 +112,7 @@ type SupabaseErrorDetails = {
 
 const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
+  { id: "admins", label: "Admins" },
   { id: "sections", label: "Sections" },
   { id: "videos", label: "Videos / Playlists" },
   { id: "reviews", label: "Reviews" },
@@ -209,7 +237,15 @@ function mapAdminChatThread(row: AdminChatThreadRow): ChatThread {
   };
 }
 
-function mapAdminChatMessage(row: AdminChatMessageRow): ChatMessage {
+function mapAdminChatMessage(
+  row: AdminChatMessageRow,
+  profileById: Map<string, ChatSenderProfileRow> = new Map()
+): ChatMessage {
+  const senderProfile = profileById.get(row.sender_id);
+  const senderLabel = isAdminRole(senderProfile?.role)
+    ? formatAdminSenderLabel(senderProfile?.full_name)
+    : senderProfile?.full_name || "EV Academy Student";
+
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -217,7 +253,10 @@ function mapAdminChatMessage(row: AdminChatMessageRow): ChatMessage {
     receiverId: row.receiver_id,
     body: row.body,
     createdAt: row.created_at,
-    readAt: row.read_at
+    readAt: row.read_at,
+    senderName: senderProfile?.full_name ?? undefined,
+    senderRole: senderProfile?.role ?? null,
+    senderLabel
   };
 }
 
@@ -911,6 +950,14 @@ export function AdminDashboard() {
   const [isLoadingMessageRows, setIsLoadingMessageRows] = useState(false);
   const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
   const [adminUnreadMessageCount, setAdminUnreadMessageCount] = useState(0);
+  const [adminProfileRows, setAdminProfileRows] = useState<AdminManagedProfileRow[]>([]);
+  const [adminProfilesFeedback, setAdminProfilesFeedback] =
+    useState<Feedback | null>(null);
+  const [isLoadingAdminProfiles, setIsLoadingAdminProfiles] = useState(false);
+  const [adminProfileSearch, setAdminProfileSearch] = useState("");
+  const [adminRoleFilter, setAdminRoleFilter] =
+    useState<AdminRoleFilter>("all");
+  const [mutatingProfileId, setMutatingProfileId] = useState<string | null>(null);
 
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => a.order - b.order),
@@ -945,6 +992,31 @@ export function AdminDashboard() {
     filteredMessageThreads[0] ??
     null;
   const adminUnreadBadgeLabel = getUnreadBadgeLabel(adminUnreadMessageCount);
+  const filteredAdminProfiles = useMemo(() => {
+    const normalizedSearch = adminProfileSearch.trim().toLowerCase();
+
+    return adminProfileRows.filter((profile) => {
+      const role = profile.role ?? "student";
+      const matchesRole =
+        adminRoleFilter === "all"
+          ? true
+          : adminRoleFilter === "admin"
+            ? role === "admin"
+            : role === adminRoleFilter;
+
+      if (!matchesRole) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return `${profile.full_name ?? ""} ${profile.email ?? ""}`
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
+  }, [adminProfileRows, adminProfileSearch, adminRoleFilter]);
 
   useEffect(() => {
     setNewVideo((current) => {
@@ -1018,6 +1090,135 @@ export function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  const loadAdminProfiles = async () => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for profile management."
+      });
+      return;
+    }
+
+    setIsLoadingAdminProfiles(true);
+    setAdminProfilesFeedback(null);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, role, created_at")
+      .order("created_at", { ascending: false });
+
+    setIsLoadingAdminProfiles(false);
+
+    if (error) {
+      console.error("EV Academy admin profile load failed", {
+        table: "profiles",
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        currentUser: currentUser
+          ? { id: currentUser.id, email: currentUser.email, role: currentUser.role }
+          : null
+      });
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: formatSupabaseAdminError(error)
+      });
+      return;
+    }
+
+    setAdminProfileRows((data ?? []) as AdminManagedProfileRow[]);
+  };
+
+  useEffect(() => {
+    if (activeTab === "admins") {
+      void loadAdminProfiles();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const promoteProfileToAdmin = async (profile: AdminManagedProfileRow) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for profile management."
+      });
+      return;
+    }
+
+    const label = profile.full_name || profile.email || "this student";
+    if (!window.confirm(`Promote ${label} to admin?`)) {
+      return;
+    }
+
+    setMutatingProfileId(profile.id);
+    setAdminProfilesFeedback(null);
+
+    const { error } = await supabase.rpc("promote_user_to_admin", {
+      target_user_id: profile.id
+    });
+
+    setMutatingProfileId(null);
+
+    if (error) {
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: formatSupabaseAdminError(error)
+      });
+      return;
+    }
+
+    setAdminProfilesFeedback({
+      tone: "success",
+      message: `${label} is now an admin.`
+    });
+    await loadAdminProfiles();
+  };
+
+  const demoteAdminToStudent = async (profile: AdminManagedProfileRow) => {
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: "Supabase is not configured for profile management."
+      });
+      return;
+    }
+
+    const label = profile.full_name || profile.email || "this admin";
+    if (!window.confirm(`Demote ${label} back to student?`)) {
+      return;
+    }
+
+    setMutatingProfileId(profile.id);
+    setAdminProfilesFeedback(null);
+
+    const { error } = await supabase.rpc("demote_admin_to_student", {
+      target_user_id: profile.id
+    });
+
+    setMutatingProfileId(null);
+
+    if (error) {
+      setAdminProfilesFeedback({
+        tone: "error",
+        message: formatSupabaseAdminError(error)
+      });
+      return;
+    }
+
+    setAdminProfilesFeedback({
+      tone: "success",
+      message: `${label} is now a student.`
+    });
+    await loadAdminProfiles();
+  };
+
   const loadMessageRows = async (threadId: string) => {
     const supabase = getSupabaseClient();
 
@@ -1048,7 +1249,22 @@ export function AdminDashboard() {
         return;
       }
 
-      setMessageRows(((data ?? []) as AdminChatMessageRow[]).map(mapAdminChatMessage));
+      const rows = (data ?? []) as AdminChatMessageRow[];
+      const senderIds = Array.from(new Set(rows.map((message) => message.sender_id)));
+      const profileById = new Map<string, ChatSenderProfileRow>();
+
+      if (senderIds.length > 0) {
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .in("id", senderIds);
+
+        ((profileRows ?? []) as ChatSenderProfileRow[]).forEach((profile) => {
+          profileById.set(profile.id, profile);
+        });
+      }
+
+      setMessageRows(rows.map((message) => mapAdminChatMessage(message, profileById)));
     } catch (error) {
       logAdminMessageDiagnostic({
         step: "load message rows unexpected failure",
@@ -1097,7 +1313,7 @@ export function AdminDashboard() {
   const loadAdminUnreadMessageCount = async () => {
     const supabase = getSupabaseClient();
 
-    if (!supabase || currentUser?.role !== "admin") {
+    if (!supabase || !isAdminRole(currentUser?.role)) {
       setAdminUnreadMessageCount(0);
       return;
     }
@@ -1218,7 +1434,7 @@ export function AdminDashboard() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (currentUser?.role !== "admin") {
+    if (!isAdminRole(currentUser?.role)) {
       setAdminUnreadMessageCount(0);
       return;
     }
@@ -1576,6 +1792,148 @@ export function AdminDashboard() {
         <button type="button" onClick={() => setActiveTab("messages")} style={secondaryButtonStyle}>
           Open Messages
         </button>
+        <button type="button" onClick={() => setActiveTab("admins")} style={secondaryButtonStyle}>
+          Manage Admins
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderAdmins = () => (
+    <div style={{ display: "grid", gap: "1.2rem" }}>
+      <div
+        style={{
+          ...cardStyle,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "1rem",
+          flexWrap: "wrap",
+          alignItems: "center"
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.35rem" }}>
+            Admin Management
+          </h2>
+          <p style={{ ...mutedStyle, margin: "0.45rem 0 0", lineHeight: 1.65 }}>
+            Admins can promote students. Only the owner can demote admins back to
+            students.
+          </p>
+        </div>
+        <button type="button" onClick={() => void loadAdminProfiles()} style={secondaryButtonStyle}>
+          Refresh
+        </button>
+      </div>
+
+      {adminProfilesFeedback ? <FeedbackBanner feedback={adminProfilesFeedback} /> : null}
+
+      <div style={cardStyle}>
+        <div className="academy-admin-management-toolbar">
+          <label style={fieldStyle}>
+            <span>Search profiles</span>
+            <input
+              value={adminProfileSearch}
+              onChange={(event) => setAdminProfileSearch(event.target.value)}
+              placeholder="Search by name or email"
+              style={inputStyle}
+            />
+          </label>
+          <div className="academy-admin-role-filters" aria-label="Filter profiles by role">
+            {(["all", "student", "admin", "owner"] as AdminRoleFilter[]).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setAdminRoleFilter(filter)}
+                className={adminRoleFilter === filter ? "is-active" : ""}
+              >
+                {filter === "all"
+                  ? "All"
+                  : filter === "student"
+                    ? "Students"
+                    : filter === "admin"
+                      ? "Admins"
+                      : "Owner"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isLoadingAdminProfiles && adminProfileRows.length === 0 ? (
+          <div style={{ marginTop: "1rem" }}>
+            <SkeletonAdminRows rows={4} />
+          </div>
+        ) : filteredAdminProfiles.length === 0 ? (
+          <p style={{ ...mutedStyle, margin: "1rem 0 0" }}>
+            No profiles match this view yet.
+          </p>
+        ) : (
+          <div className="academy-admin-profile-list">
+            {filteredAdminProfiles.map((profile) => {
+              const role = profile.role ?? "student";
+              const isCurrentOwner = isOwnerRole(currentUser?.role);
+              const isSelf = currentUser?.id === profile.id;
+              const isBusy = mutatingProfileId === profile.id;
+              const displayName = profile.full_name || "EV Academy Student";
+
+              return (
+                <article key={profile.id} className="academy-admin-profile-card">
+                  <div>
+                    <div className="academy-admin-profile-heading">
+                      <strong>{displayName}</strong>
+                      <span className={`academy-role-badge is-${role}`}>
+                        {role === "owner"
+                          ? "Owner"
+                          : role === "admin"
+                            ? "Admin"
+                            : "Student"}
+                      </span>
+                    </div>
+                    <p>{profile.email || "Email unavailable"}</p>
+                    <small>
+                      Joined{" "}
+                      {profile.created_at
+                        ? new Date(profile.created_at).toLocaleDateString()
+                        : "date unavailable"}
+                    </small>
+                  </div>
+                  <div className="academy-admin-profile-actions">
+                    {role === "student" || role === "visitor" ? (
+                      <button
+                        type="button"
+                        onClick={() => void promoteProfileToAdmin(profile)}
+                        style={primaryButtonStyle}
+                        disabled={isBusy}
+                      >
+                        {isBusy ? "Promoting..." : "Promote to Admin"}
+                      </button>
+                    ) : role === "admin" ? (
+                      isCurrentOwner ? (
+                        <button
+                          type="button"
+                          onClick={() => void demoteAdminToStudent(profile)}
+                          style={dangerButtonStyle}
+                          disabled={isBusy}
+                        >
+                          {isBusy ? "Demoting..." : "Demote to Student"}
+                        </button>
+                      ) : (
+                        <span className="academy-admin-permission-note">
+                          Only the owner can demote admins.
+                        </span>
+                      )
+                    ) : (
+                      <span className="academy-admin-permission-note">
+                        {isSelf
+                          ? "You are the owner."
+                          : "Owner is protected from demotion."}
+                      </span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2086,7 +2444,10 @@ export function AdminDashboard() {
                   <p style={mutedStyle}>No messages in this conversation yet.</p>
                 ) : (
                   messageRows.map((message) => {
-                    const isAdminMessage = message.senderId === currentUser?.id;
+                    const isAdminMessage =
+                      isAdminRole(message.senderRole) ||
+                      (message.senderId === currentUser?.id &&
+                        isAdminRole(currentUser?.role));
 
                     return (
                       <article
@@ -2095,6 +2456,11 @@ export function AdminDashboard() {
                           isAdminMessage ? "is-admin" : "is-student"
                         }`}
                       >
+                        <strong className="academy-admin-message-sender">
+                          {isAdminMessage
+                            ? message.senderLabel || "Admin_EV"
+                            : message.senderLabel || selectedMessageThread.studentName}
+                        </strong>
                         <p>{message.body}</p>
                         <time dateTime={message.createdAt}>
                           {formatMessageTime(message.createdAt)}
@@ -2258,7 +2624,7 @@ export function AdminDashboard() {
   );
 
   return (
-    <AcademyProtected allowedRoles={["admin"]}>
+    <AcademyProtected allowedRoles={["admin", "owner"]}>
       <AcademyPageLayout
         title="EV Academy Admin"
         subtitle="Manage tutorial sections, playlists, videos, comments, and academy analytics."
@@ -2359,6 +2725,7 @@ export function AdminDashboard() {
           </div>
 
           {activeTab === "overview" ? renderOverview() : null}
+          {activeTab === "admins" ? renderAdmins() : null}
           {activeTab === "sections" ? renderSections() : null}
           {activeTab === "videos" ? renderVideos() : null}
           {activeTab === "reviews" ? renderReviews() : null}

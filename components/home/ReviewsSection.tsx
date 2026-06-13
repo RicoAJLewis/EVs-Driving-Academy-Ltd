@@ -8,6 +8,7 @@ import {
   type ReviewSource,
   type SiteReview
 } from "@/lib/reviews-data";
+import { normalizeUserRole } from "@/lib/academy-roles";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademyUser } from "@/types/academy";
 import { SkeletonReviewCard } from "@/components/ui/Skeleton";
@@ -94,9 +95,11 @@ function getRoleFromSessionUser(user: {
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 }) {
-  return user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
-    ? "admin"
-    : "student";
+  return (
+    normalizeUserRole(user.app_metadata?.role) ??
+    normalizeUserRole(user.user_metadata?.role) ??
+    "student"
+  );
 }
 
 function toSiteReview(row: SupabaseReviewRow): DisplayReview {

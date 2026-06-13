@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { HeroMenu } from "@/components/hero/HeroMenu";
+import { isAdminRole } from "@/lib/academy-roles";
 import { getAcademyRedirectForRole } from "@/lib/academy-auth";
 import { useAcademy } from "./AcademyProvider";
 
@@ -35,7 +36,7 @@ export function AcademyPageLayout({
         href={getAcademyRedirectForRole(currentUser.role)}
         style={topRightButtonStyle}
       >
-        {currentUser.role === "admin" ? "Admin Panel" : "My Dashboard"}
+        {isAdminRole(currentUser.role) ? "Admin Panel" : "My Dashboard"}
       </Link>
       <button
         type="button"

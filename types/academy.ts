@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "student" | "visitor";
+export type UserRole = "admin" | "owner" | "student" | "visitor";
 
 export type AcademyUser = {
   id: string;
@@ -128,4 +128,7 @@ export type ChatMessage = {
   body: string;
   createdAt: string;
   readAt: string | null;
+  senderName?: string;
+  senderRole?: UserRole | null;
+  senderLabel?: string;
 };

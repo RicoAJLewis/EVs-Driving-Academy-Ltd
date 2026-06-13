@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PostgrestError, User } from "@supabase/supabase-js";
+import { isAdminRole } from "@/lib/academy-roles";
 import {
   getSupabaseClient,
   getSupabaseConfigStatus,
@@ -115,8 +116,8 @@ export function AcademyDebugPage() {
     () =>
       Boolean(
         authUser &&
-          (profile?.role === "admin" ||
-            currentUser?.role === "admin" ||
+          (isAdminRole(profile?.role) ||
+            isAdminRole(currentUser?.role) ||
             isAdminRpc === true)
       ),
     [authUser, currentUser?.role, isAdminRpc, profile?.role]
@@ -271,7 +272,7 @@ export function AcademyDebugPage() {
   };
 
   return (
-    <AcademyProtected allowedRoles={["admin"]}>
+    <AcademyProtected allowedRoles={["admin", "owner"]}>
       <AcademyPageLayout
         title="EV Academy Debug"
         subtitle="Temporary Supabase diagnostics for the live Academy connection, session, profile, RLS, and EV Academy tables."
@@ -357,7 +358,7 @@ export function AcademyDebugPage() {
             <CheckCard
               label="Profile role"
               value={profile?.role ?? "Not found"}
-              isGood={profile?.role === "admin"}
+              isGood={isAdminRole(profile?.role)}
             />
             <CheckCard
               label="Profile id matches user"

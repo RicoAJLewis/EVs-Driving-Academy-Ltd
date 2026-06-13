@@ -14,6 +14,7 @@ import {
   normalizeAcademyThumbnailUrl,
   normalizeAcademyVideoUrl
 } from "@/lib/academy-media";
+import { isAdminRole, normalizeUserRole } from "@/lib/academy-roles";
 import { getSupabaseClient, getSupabaseConfigStatus } from "@/lib/supabaseClient";
 import type {
   AcademyAdminActionError,
@@ -203,12 +204,20 @@ function getDefaultProfileNameFromUser(user: User) {
 }
 
 function getRoleFromUser(user: User, profile?: ProfileRow | null): UserRole {
-  if (
-    profile?.role === "admin" ||
-    user.app_metadata?.role === "admin" ||
-    user.user_metadata?.role === "admin"
-  ) {
-    return "admin";
+  const profileRole = normalizeUserRole(profile?.role);
+  const appMetadataRole = normalizeUserRole(user.app_metadata?.role);
+  const userMetadataRole = normalizeUserRole(user.user_metadata?.role);
+
+  if (profileRole === "admin" || profileRole === "owner") {
+    return profileRole;
+  }
+
+  if (appMetadataRole === "admin" || appMetadataRole === "owner") {
+    return appMetadataRole;
+  }
+
+  if (userMetadataRole === "admin" || userMetadataRole === "owner") {
+    return userMetadataRole;
   }
 
   return "student";
@@ -882,7 +891,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
       throw new Error("Admin session not loaded. Please log out and log back in.");
     }
 
-    if (debugInfo.profileRole !== "admin" || debugInfo.isAdminRpc !== true) {
+    if (!isAdminRole(debugInfo.profileRole) || debugInfo.isAdminRpc !== true) {
       throw new Error(
         [
           "Admin permissions are not active for this session.",
@@ -892,7 +901,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
           `App metadata role: ${debugInfo.appMetadataRole ?? "not set"}`,
           `User metadata role: ${debugInfo.userMetadataRole ?? "not set"}`,
           `public.is_admin(): ${String(debugInfo.isAdminRpc)}`,
-          "Please confirm public.profiles.id matches this user id and role is admin, then log out and log back in."
+          "Please confirm public.profiles.id matches this user id and role is admin/owner, then log out and log back in."
         ].join("\n")
       );
     }
@@ -1231,7 +1240,7 @@ export function AcademyProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
 
     if (!supabase) return;
-    const debugInfo = currentUser?.role === "admin" ? await ensureAdminSession() : null;
+    const debugInfo = isAdminRole(currentUser?.role) ? await ensureAdminSession() : null;
 
     const { error } = await supabase.from("video_comments").delete().eq("id", commentId);
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { normalizeUserRole } from "@/lib/academy-roles";
 import { getAcademyRedirectForRole } from "@/lib/academy-auth";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { UserRole } from "@/types/academy";
@@ -16,17 +17,35 @@ type HeaderUser = {
   role: UserRole;
 };
 
-function getHeaderUser(user: User): HeaderUser {
+async function getHeaderUser(user: User): Promise<HeaderUser> {
+  const supabase = getSupabaseClient();
+  let profileName = "";
+  let profileRole: UserRole | null = null;
+
+  if (supabase) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("full_name, role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    profileName =
+      typeof data?.full_name === "string" ? data.full_name.trim() : "";
+    profileRole = normalizeUserRole(data?.role);
+  }
+
   const role =
-    user.app_metadata?.role === "admin" || user.user_metadata?.role === "admin"
-      ? "admin"
-      : "student";
+    profileRole ??
+    normalizeUserRole(user.app_metadata?.role) ??
+    normalizeUserRole(user.user_metadata?.role) ??
+    "student";
   const name =
-    typeof user.user_metadata?.name === "string"
+    profileName ||
+    (typeof user.user_metadata?.name === "string"
       ? user.user_metadata.name
       : typeof user.user_metadata?.full_name === "string"
         ? user.user_metadata.full_name
-        : "";
+        : "");
   const label = name.trim() || user.email?.split("@")[0] || "Profile";
 
   return { label, role };
@@ -52,7 +71,9 @@ export function HeroAuthLink({ reducedMotion }: HeroAuthLinkProps) {
         return;
       }
 
-      setHeaderUser(data.session?.user ? getHeaderUser(data.session.user) : null);
+      setHeaderUser(
+        data.session?.user ? await getHeaderUser(data.session.user) : null
+      );
       setIsReady(true);
     };
 
@@ -63,8 +84,18 @@ export function HeroAuthLink({ reducedMotion }: HeroAuthLinkProps) {
         return;
       }
 
-      setHeaderUser(session?.user ? getHeaderUser(session.user) : null);
-      setIsReady(true);
+      void (async () => {
+        const nextHeaderUser = session?.user
+          ? await getHeaderUser(session.user)
+          : null;
+
+        if (!isMounted) {
+          return;
+        }
+
+        setHeaderUser(nextHeaderUser);
+        setIsReady(true);
+      })();
     });
 
     return () => {
