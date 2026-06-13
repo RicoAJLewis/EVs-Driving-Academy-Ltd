@@ -4,6 +4,12 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getAcademyThumbnailUrl } from "@/lib/academy-media";
 import type { AcademyVideo } from "@/types/academy";
+import {
+  Skeleton,
+  SkeletonCard,
+  SkeletonMessageBubble,
+  SkeletonVideoPlayer
+} from "@/components/ui/Skeleton";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { useAcademy } from "./AcademyProvider";
 import { AcademyVideoPlayer } from "./AcademyVideoPlayer";
@@ -113,6 +119,7 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
     getVideosForSection,
     incrementVideoView,
     toggleCommentVisibility,
+    isReady,
     visibleVideos
   } = useAcademy();
   const [commentText, setCommentText] = useState("");
@@ -190,9 +197,11 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
   return (
     <AcademyPageLayout
       eyebrow="Tutorial Watch"
-      title={video?.title ?? "EV Academy Video"}
+      title={!isReady ? "Loading tutorial" : video?.title ?? "EV Academy Video"}
       subtitle={
-        video?.description ??
+        !isReady
+          ? "Preparing your EV Academy lesson player and comments."
+          : video?.description ??
         "This tutorial could not be found. Please return to the Academy dashboard."
       }
       actions={
@@ -216,7 +225,47 @@ export function AcademyWatchPage({ videoId }: AcademyWatchPageProps) {
         </Link>
       }
     >
-      {!video ? (
+      {!isReady ? (
+        <div style={{ display: "grid", gap: "1.6rem" }} aria-label="Loading tutorial">
+          <SkeletonCard style={{ padding: "1rem" }}>
+            <SkeletonVideoPlayer />
+            <div style={{ display: "grid", gap: "0.75rem", padding: "1rem 0.4rem 0.3rem" }}>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <Skeleton width="7rem" height="1.8rem" />
+                <Skeleton width="9rem" height="1rem" />
+                <Skeleton width="5rem" height="1rem" />
+              </div>
+              <Skeleton width="75%" height="1rem" />
+            </div>
+          </SkeletonCard>
+
+          <section
+            style={{
+              display: "grid",
+              gap: "1rem",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))"
+            }}
+          >
+            <SkeletonCard>
+              <Skeleton width="42%" height="0.9rem" />
+              <Skeleton width="78%" height="1.25rem" />
+              <Skeleton width="90%" height="0.9rem" />
+            </SkeletonCard>
+            <SkeletonCard>
+              <Skeleton width="38%" height="0.9rem" />
+              <Skeleton width="80%" height="0.95rem" />
+            </SkeletonCard>
+          </section>
+
+          <section style={{ display: "grid", gap: "1rem" }}>
+            <Skeleton width="9rem" height="1.6rem" rounded="0.6rem" />
+            <SkeletonCard>
+              <SkeletonMessageBubble />
+              <SkeletonMessageBubble mine />
+            </SkeletonCard>
+          </section>
+        </div>
+      ) : !video ? (
         <div
           style={{
             borderRadius: "1.4rem",

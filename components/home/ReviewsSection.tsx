@@ -10,6 +10,7 @@ import {
 } from "@/lib/reviews-data";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademyUser } from "@/types/academy";
+import { SkeletonReviewCard } from "@/components/ui/Skeleton";
 
 const ALL_REVIEWS_FILTER = "All Reviews";
 const WEBSITE_REVIEW_SOURCE = "EVs Driving Academy Ltd";
@@ -401,6 +402,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
   const [comment, setComment] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(true);
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [editingRating, setEditingRating] = useState(5);
   const [editingComment, setEditingComment] = useState("");
@@ -410,9 +412,11 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     const supabase = getSupabaseClient();
 
     if (!supabase) {
+      setIsLoadingReviews(false);
       return;
     }
 
+    setIsLoadingReviews(true);
     const { data: reviewRows, error: reviewError } = await supabase
       .from("reviews")
       .select(
@@ -423,10 +427,12 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
 
     if (reviewError) {
       setStatusMessage(`Unable to load website reviews: ${reviewError.message}`);
+      setIsLoadingReviews(false);
       return;
     }
 
     setWebsiteReviews((reviewRows ?? []).map(toSiteReview));
+    setIsLoadingReviews(false);
   }, []);
 
   useEffect(() => {
@@ -434,6 +440,7 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
     const supabase = getSupabaseClient();
 
     if (!supabase) {
+      setIsLoadingReviews(false);
       return;
     }
 
@@ -889,7 +896,14 @@ export function ReviewsSection({ setmoreReviews }: ReviewsSectionProps) {
             variants={reducedMotion ? undefined : itemVariants}
             className="reviews-grid"
           >
-            {filteredReviews.length > 0 ? (
+            {isLoadingReviews && websiteReviews.length === 0 ? (
+              <>
+                <SkeletonReviewCard />
+                <SkeletonReviewCard />
+                <SkeletonReviewCard />
+                <SkeletonReviewCard />
+              </>
+            ) : filteredReviews.length > 0 ? (
               filteredReviews.map((review) => {
                 const canManage =
                   Boolean(currentUser) &&

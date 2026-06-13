@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { getAcademyRedirectForRole } from "@/lib/academy-auth";
 import { getAcademyThumbnailUrl } from "@/lib/academy-media";
+import { SkeletonAcademySections, SkeletonFeaturedVideo } from "@/components/ui/Skeleton";
 import { useAcademy } from "./AcademyProvider";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyVideoCard } from "./AcademyVideoCard";
@@ -73,7 +74,10 @@ export function AcademyLanding() {
       actions={heroAction}
     >
       {!isReady ? (
-        <div style={{ color: "#eff6ff" }}>Loading EV Academy...</div>
+        <div style={{ display: "grid", gap: "2rem" }} aria-label="Loading EV Academy">
+          <SkeletonFeaturedVideo />
+          <SkeletonAcademySections />
+        </div>
       ) : (
         <div style={{ display: "grid", gap: "2rem" }}>
           <section

@@ -9,6 +9,11 @@ import {
 } from "@/lib/academy-media";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { AcademySection, AcademyVideo, ChatMessage, ChatThread } from "@/types/academy";
+import {
+  SkeletonAdminRows,
+  SkeletonMessageBubble,
+  SkeletonMessageThread
+} from "@/components/ui/Skeleton";
 import { AcademyPageLayout } from "./AcademyPageLayout";
 import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
@@ -1862,11 +1867,7 @@ export function AdminDashboard() {
       {reviewsFeedback ? <FeedbackBanner feedback={reviewsFeedback} /> : null}
 
       {isLoadingReviews ? (
-        <div style={cardStyle}>
-          <p style={{ margin: 0, color: "rgba(239,246,255,0.74)" }}>
-            Loading reviews...
-          </p>
-        </div>
+        <SkeletonAdminRows rows={3} />
       ) : reviewRows.length === 0 ? (
         <div style={cardStyle}>
           <p style={{ margin: 0, color: "rgba(239,246,255,0.74)" }}>
@@ -1990,7 +1991,11 @@ export function AdminDashboard() {
           </div>
 
           {isLoadingMessageThreads && messageThreads.length === 0 ? (
-            <p style={mutedStyle}>Loading conversations...</p>
+            <div className="academy-message-thread-list" aria-label="Loading conversations">
+              <SkeletonMessageThread />
+              <SkeletonMessageThread />
+              <SkeletonMessageThread />
+            </div>
           ) : filteredMessageThreads.length === 0 ? (
             <p style={mutedStyle}>
               {messageThreads.length === 0
@@ -2072,7 +2077,11 @@ export function AdminDashboard() {
 
               <div className="academy-message-history">
                 {isLoadingMessageRows ? (
-                  <p style={mutedStyle}>Loading messages...</p>
+                  <>
+                    <SkeletonMessageBubble />
+                    <SkeletonMessageBubble mine />
+                    <SkeletonMessageBubble />
+                  </>
                 ) : messageRows.length === 0 ? (
                   <p style={mutedStyle}>No messages in this conversation yet.</p>
                 ) : (

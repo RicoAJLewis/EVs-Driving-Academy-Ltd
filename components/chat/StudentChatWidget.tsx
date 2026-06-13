@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabaseClient";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { ChatMessage, ChatThread } from "@/types/academy";
 import { useAcademy } from "@/components/academy/AcademyProvider";
 
@@ -354,7 +355,16 @@ export function StudentChatWidget() {
 
           <div className="student-chat-messages">
             {isLoading && messages.length === 0 ? (
-              <p className="student-chat-empty">Loading your chat...</p>
+              <>
+                <div className="student-chat-bubble is-admin" aria-hidden="true">
+                  <Skeleton width="100%" height="0.85rem" />
+                  <Skeleton width="68%" height="0.85rem" />
+                </div>
+                <div className="student-chat-bubble is-mine" aria-hidden="true">
+                  <Skeleton width="100%" height="0.85rem" />
+                  <Skeleton width="54%" height="0.85rem" />
+                </div>
+              </>
             ) : messages.length === 0 ? (
               <p className="student-chat-empty">
                 Send us a message and EVs Driving Academy will reply soon.
