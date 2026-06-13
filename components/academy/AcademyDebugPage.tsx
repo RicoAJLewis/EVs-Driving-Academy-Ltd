@@ -8,6 +8,7 @@ import {
   getSupabaseUrlHostname
 } from "@/lib/supabaseClient";
 import { AcademyPageLayout } from "./AcademyPageLayout";
+import { AcademyProtected } from "./AcademyProtected";
 import { useAcademy } from "./AcademyProvider";
 
 type ProfileDebug = {
@@ -270,11 +271,12 @@ export function AcademyDebugPage() {
   };
 
   return (
-    <AcademyPageLayout
-      title="EV Academy Debug"
-      subtitle="Temporary Supabase diagnostics for the live Academy connection, session, profile, RLS, and EV Academy tables."
-    >
-      <div style={{ display: "grid", gap: "1.4rem" }}>
+    <AcademyProtected allowedRoles={["admin"]}>
+      <AcademyPageLayout
+        title="EV Academy Debug"
+        subtitle="Temporary Supabase diagnostics for the live Academy connection, session, profile, RLS, and EV Academy tables."
+      >
+        <div style={{ display: "grid", gap: "1.4rem" }}>
         <section style={panelStyle}>
           <div style={panelHeaderStyle}>
             <div>
@@ -437,8 +439,9 @@ export function AcademyDebugPage() {
             </div>
           ) : null}
         </section>
-      </div>
-    </AcademyPageLayout>
+        </div>
+      </AcademyPageLayout>
+    </AcademyProtected>
   );
 }
 

@@ -302,144 +302,6 @@ function FeedbackBanner({ feedback }: { feedback: Feedback }) {
   );
 }
 
-function AdminDebugPanel({
-  debugInfo,
-  lastError,
-  onRefresh,
-  onRunInsertTest
-}: {
-  debugInfo: ReturnType<typeof useAcademy>["adminDebugInfo"];
-  lastError: ReturnType<typeof useAcademy>["lastAdminActionError"];
-  onRefresh: () => Promise<unknown>;
-  onRunInsertTest: () => Promise<void>;
-}) {
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
-
-  const rows = [
-    ["Supabase URL exists", debugInfo?.supabaseUrlExists ? "Yes" : "No"],
-    ["Anon key exists", debugInfo?.supabaseAnonKeyExists ? "Yes" : "No"],
-    ["Session exists", debugInfo?.sessionExists ? "Yes" : "No"],
-    ["User id", debugInfo?.userId ?? "Not loaded"],
-    ["User email", debugInfo?.userEmail ?? "Not loaded"],
-    ["Profile id", debugInfo?.profileId ?? "Not found"],
-    ["Profile role", debugInfo?.profileRole ?? "Not found"],
-    ["Profile matches session", debugInfo?.profileMatchesSession ? "Yes" : "No"],
-    ["App metadata role", debugInfo?.appMetadataRole ?? "Not set"],
-    ["User metadata role", debugInfo?.userMetadataRole ?? "Not set"],
-    ["public.is_admin()", String(debugInfo?.isAdminRpc ?? "Not checked")],
-    ["Debug checked", debugInfo?.checkedAt ?? "Not checked"]
-  ];
-
-  const runInsertTest = async () => {
-    setFeedback(null);
-
-    try {
-      await onRunInsertTest();
-      setFeedback({
-        tone: "success",
-        message: "Debug insert succeeded. RLS accepted the current admin session."
-      });
-    } catch (error) {
-      setFeedback({
-        tone: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Debug insert failed. Check browser console for details."
-      });
-    }
-  };
-
-  return (
-    <section style={cardStyle}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: "1rem",
-          alignItems: "center",
-          flexWrap: "wrap"
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0, color: "#eff6ff", fontSize: "1.2rem" }}>
-            Admin Supabase Debug
-          </h2>
-          <p style={{ ...mutedStyle, margin: "0.35rem 0 0" }}>
-            Safe diagnostics for the current browser session and RLS admin check.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => void onRefresh()}
-            style={secondaryButtonStyle}
-          >
-            Refresh Debug
-          </button>
-          <button
-            type="button"
-            onClick={() => void runInsertTest()}
-            style={primaryInlineButtonStyle}
-          >
-            Run Section Insert Test
-          </button>
-        </div>
-      </div>
-
-      <div className="academy-admin-stats" style={{ marginTop: "1rem" }}>
-        {rows.map(([label, value]) => (
-          <div key={label} style={debugStatStyle}>
-            <span style={{ color: "rgba(239,246,255,0.62)", fontSize: "0.82rem" }}>
-              {label}
-            </span>
-            <strong
-              style={{
-                color:
-                  value === "No" || value === "Not found" || value === "false"
-                    ? "#fecaca"
-                    : "#eff6ff",
-                overflowWrap: "anywhere"
-              }}
-            >
-              {value}
-            </strong>
-          </div>
-        ))}
-      </div>
-
-      {debugInfo?.isAdminRpcError ? (
-        <FeedbackBanner
-          feedback={{
-            tone: "error",
-            message: `Admin RPC/profile debug issue: ${debugInfo.isAdminRpcError}`
-          }}
-        />
-      ) : null}
-
-      {lastError ? (
-        <FeedbackBanner
-          feedback={{
-            tone: "error",
-            message: [
-              "Last admin Supabase error:",
-              `Message: ${lastError.message}`,
-              `Code: ${lastError.code ?? "none"}`,
-              `Details: ${lastError.details ?? "none"}`,
-              `Hint: ${lastError.hint ?? "none"}`,
-              `Table: ${lastError.table}`,
-              `Action: ${lastError.action}`,
-              `Payload: ${JSON.stringify(lastError.payload)}`
-            ].join("\n")
-          }}
-        />
-      ) : null}
-
-      {feedback ? <FeedbackBanner feedback={feedback} /> : null}
-    </section>
-  );
-}
-
 function VideoPreview({
   title,
   videoUrl,
@@ -1002,7 +864,6 @@ function VideoEditor({
 export function AdminDashboard() {
   const router = useRouter();
   const {
-    adminDebugInfo,
     analytics,
     comments,
     createSection,
@@ -1015,13 +876,10 @@ export function AdminDashboard() {
     featuredVideo,
     isReady,
     logout,
-    lastAdminActionError,
     moveSection,
     moveVideo,
-    refreshAdminDebugInfo,
     sections,
     setVideoFeatured,
-    testAdminSectionInsert,
     toggleVideoVisibility,
     updateSection,
     updateVideo,
@@ -2429,13 +2287,6 @@ export function AdminDashboard() {
             <FeedbackBanner feedback={{ tone: "error", message: errorMessage }} />
           ) : null}
 
-          <AdminDebugPanel
-            debugInfo={adminDebugInfo}
-            lastError={lastAdminActionError}
-            onRefresh={refreshAdminDebugInfo}
-            onRunInsertTest={testAdminSectionInsert}
-          />
-
           <div
             className="academy-admin-tabs"
             style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}
@@ -2594,13 +2445,6 @@ const statusPillStyle = {
   padding: "0.35rem 0.65rem",
   fontSize: "0.82rem",
   fontWeight: 700
-} as const;
-
-const debugStatStyle = {
-  ...cardStyle,
-  display: "grid",
-  gap: "0.3rem",
-  padding: "0.95rem"
 } as const;
 
 const previewPanelStyle = {
